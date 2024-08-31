@@ -27,7 +27,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "com.tngtech.java.junit.dataprovider.DataProvider",
         "com.tngtech.java.junit.dataprovider.DataProviderRunner",
         "com.tngtech.java.junit.dataprovider.UseDataProvider");
+    private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
+    private static final String LOCAL = "LOCAL";
 
+    private Scope currentScope;
     private boolean isTranslatingParameterizedTest;
     private boolean isTranslatingTestNameRule;
     private boolean addTestInfoArgumentToMethod;
@@ -51,6 +54,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
+        currentScope = new GlobalScope();
         super.visitCompilationUnit(ctx);
 
         Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(addedImports);
@@ -319,7 +323,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (ctx.DOT() != null) {
             maybeInstanceVariableAccessViaThis(ctx)
                 .ifPresent(instanceVariable -> {
-                    if (instanceVariable.equals(symbolTable.getTestNameRule())) {
+                    if (TEST_NAME_RULE.equals(currentScope.resolve(instanceVariable))) {
                         addTestInfoArgumentToMethod = true;
                         rewriter.replace(ctx.start, ctx.stop, "testInfo");
                     }
@@ -347,7 +351,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return Optional.of(ctx.expression(0))
             .map(JavaParser.ExpressionContext::primary)
             .filter(p -> p.THIS() != null && ctx.identifier() != null)
-            .map(__ -> ctx.identifier().getText());
+            .map(__ -> "this." + ctx.identifier().getText());
     }
 
     private boolean isTestUtilTypeCall(JavaParser.ExpressionContext ctx) {
@@ -370,8 +374,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .filter(args -> {
                 if (args.size() == 2) {
                     String testNameRule = args.get(1).getText();
-                    return testNameRule.equals(symbolTable.getTestNameRule()) ||
-                           testNameRule.split("this.")[1].equals(symbolTable.getTestNameRule());
+                    return TEST_NAME_RULE.equals(currentScope.resolve(testNameRule));
                 }
                 return false;
             });
@@ -400,14 +403,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 throw new IllegalStateException(
                     "Unexpected declaration for TestName Rule: " + ctx.getText());
             }
-            symbolTable.setTestNameRule(ctx.variableDeclarator(0).variableDeclaratorId().getText());
-        } else if (symbolTable.hasTestNameRule()) {
-            boolean hasAnotherDefinitionForTestNameRule = ctx.variableDeclarator().stream()
-                .anyMatch(v -> v.variableDeclaratorId().getText().equals(symbolTable.getTestNameRule()));
-            if (hasAnotherDefinitionForTestNameRule) {
-                // TODO - need to implement
-                throw new UnsupportedOperationException(
-                    "Scopes not implemented to differentiate multiple declarations using a same name.");
+
+            currentScope.declare(ctx.variableDeclarator(0).variableDeclaratorId().getText(), TEST_NAME_RULE);
+        } else {
+            for (var varDeclarator : ctx.variableDeclarator()) {
+                currentScope.declare(varDeclarator.variableDeclaratorId().getText(), LOCAL);
             }
         }
         return super.visitVariableDeclarators(ctx);
@@ -415,7 +415,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
+        currentScope = new FunctionScope(currentScope);
         super.visitMethodDeclaration(ctx);
+        currentScope = currentScope.enclosing();
         if (addTestInfoArgumentToMethod) {
             symbolTable.addTestInfoUsageMethod(ctx);
             addTestInfoArgumentToMethod = false;
@@ -445,7 +447,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitPrimary(JavaParser.PrimaryContext ctx) {
         Optional.ofNullable(ctx.identifier())
             .ifPresent(id -> {
-                if (id.getText().equals(symbolTable.getTestNameRule())) {
+                if (TEST_NAME_RULE.equals(currentScope.resolve(id.getText()))) {
                     addTestInfoArgumentToMethod = true;
                     rewriter.replace(id.start, id.stop, "testInfo");
                 }

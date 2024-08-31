@@ -10,7 +10,6 @@ import antlr.java.JavaParser;
 
 class SymbolTable {
 
-    private String testNameRule;
     private final Set<JavaParser.MethodDeclarationContext> processedTestInfoUsageMethods;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private final Map<String, String> variableTypes;
@@ -19,18 +18,6 @@ class SymbolTable {
         processedTestInfoUsageMethods = new HashSet<>();
         testInfoUsageMethods = new HashSet<>();
         variableTypes = new HashMap<>();
-    }
-
-    public String getTestNameRule() {
-        return testNameRule;
-    }
-
-    public void setTestNameRule(String testNameRule) {
-        this.testNameRule = testNameRule;
-    }
-
-    public boolean hasTestNameRule() {
-        return testNameRule != null;
     }
 
     public void addTestInfoUsageMethod(JavaParser.MethodDeclarationContext helperMethod) {
@@ -70,8 +57,7 @@ class SymbolTable {
     @Override
     public String toString() {
         return "SymbolTable{" +
-               "testNameRule='" + testNameRule + '\'' +
-               ", testInfoUsageMethods=" + testInfoUsageMethods +
+               "testInfoUsageMethods=" + testInfoUsageMethods +
                ", variableTypes=" + variableTypes +
                '}';
     }

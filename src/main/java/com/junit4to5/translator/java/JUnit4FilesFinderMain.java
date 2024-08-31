@@ -45,7 +45,9 @@ public class JUnit4FilesFinderMain {
                 parser.setBuildParseTree(true);
                 JavaParser.CompilationUnitContext compilationUnitContext = parser.compilationUnit();
                 var tree = compilationUnitContext.getRuleContext();
-                return new JUnit4FilesFinder().visit(tree);
+                JUnit4FilesFinder jUnit4FilesFinder = new JUnit4FilesFinder();
+                jUnit4FilesFinder.visit(tree);
+                return jUnit4FilesFinder.isJUnit4File() && !jUnit4FilesFinder.isJUnit4TestRule();
             } catch (IOException e) {
                 throw new RuntimeException("Error reading the input file " + inputFile + ":", e);
             }

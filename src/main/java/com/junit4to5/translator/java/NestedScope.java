@@ -2,9 +2,9 @@ package com.junit4to5.translator.java;
 
 import java.util.Optional;
 
-public class FunctionScope extends BaseScope {
+class NestedScope extends BaseScope {
 
-    public FunctionScope(Scope enclosingScope) {
+    public NestedScope(Scope enclosingScope) {
         super(enclosingScope);
     }
 
@@ -16,6 +16,6 @@ public class FunctionScope extends BaseScope {
 
     @Override
     public String name() {
-        return "function";
+        return "nested";
     }
 }

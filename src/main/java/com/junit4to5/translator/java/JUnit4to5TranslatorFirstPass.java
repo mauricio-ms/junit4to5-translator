@@ -415,13 +415,21 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        currentScope = new FunctionScope(currentScope);
+        currentScope = new NestedScope(currentScope);
         super.visitMethodDeclaration(ctx);
         currentScope = currentScope.enclosing();
         if (addTestInfoArgumentToMethod) {
             symbolTable.addTestInfoUsageMethod(ctx);
             addTestInfoArgumentToMethod = false;
         }
+        return null;
+    }
+
+    @Override
+    public Void visitBlock(JavaParser.BlockContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitBlock(ctx);
+        currentScope = currentScope.enclosing();
         return null;
     }
 

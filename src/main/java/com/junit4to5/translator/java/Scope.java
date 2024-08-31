@@ -1,6 +1,6 @@
 package com.junit4to5.translator.java;
 
-public interface Scope {
+interface Scope {
     String name();
 
     Scope enclosing();

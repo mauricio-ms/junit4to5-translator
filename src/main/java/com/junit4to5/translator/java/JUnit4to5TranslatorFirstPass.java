@@ -168,7 +168,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     case "org.junit.After" -> "org.junit.jupiter.api.AfterEach";
                     case "org.junit.AfterClass" -> "org.junit.jupiter.api.AfterAll";
                     case "org.junit.Ignore" -> "org.junit.jupiter.api.Disabled";
-                    case "org.junit.Rule" -> importName;
+                    case "org.junit.Rule",
+                         "org.junit.rules.ErrorCollector" -> importName;
                     case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
                     case "org.junit.runner.RunWith" -> "org.junit.jupiter.api.extension.ExtendWith";
                     case "org.junit.runners.Parameterized",

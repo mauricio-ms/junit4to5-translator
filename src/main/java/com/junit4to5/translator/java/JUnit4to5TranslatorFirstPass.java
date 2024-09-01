@@ -446,14 +446,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
-    public Void visitBlock(JavaParser.BlockContext ctx) {
-        currentScope = new NestedScope(currentScope);
-        super.visitBlock(ctx);
-        currentScope = currentScope.enclosing();
-        return null;
-    }
-
-    @Override
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
         if (expectedTestAnnotationClause != null) {
             String before = "%s%8sassertThrows(%s, () -> {"
@@ -468,6 +460,22 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         super.visitMethodBody(ctx);
         expectedTestAnnotationClause = null;
+        return null;
+    }
+
+    @Override
+    public Void visitBlock(JavaParser.BlockContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitBlock(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitForControl(JavaParser.ForControlContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitForControl(ctx);
+        currentScope = currentScope.enclosing();
         return null;
     }
 

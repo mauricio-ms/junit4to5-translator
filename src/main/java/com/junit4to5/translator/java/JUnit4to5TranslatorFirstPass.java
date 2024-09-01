@@ -229,7 +229,21 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (isTranslatingParameterizedTest) {
             return switch (annotationName) {
                 case "Test" -> Optional.of("@ParameterizedTest");
-                case "UseDataProvider" -> Optional.of("@MethodSource(%s)".formatted(ctx.elementValue().getText()));
+                case "UseDataProvider" -> Optional.of("@MethodSource(%s)"
+                    .formatted(Optional.ofNullable(ctx.elementValue())
+                        .map(RuleContext::getText)
+                        .orElseGet(() -> {
+                            var elementValuePairs = ctx.elementValuePairs().elementValuePair();
+                            if (elementValuePairs.size() != 1) {
+                                throw new IllegalStateException("Unexpected annotation parameters: " + ctx.getText());
+                            }
+                            var elementValuePair = elementValuePairs.get(0);
+                            if (!"value".equals(elementValuePair.identifier().getText())) {
+                                throw new IllegalStateException(
+                                    "No value parameter found in annotation: " + ctx.getText());
+                            }
+                            return elementValuePair.elementValue().getText();
+                        })));
                 default -> Optional.empty();
             };
         }

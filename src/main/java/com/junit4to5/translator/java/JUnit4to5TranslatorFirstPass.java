@@ -123,7 +123,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitImportDeclaration(JavaParser.ImportDeclarationContext ctx) {
-        String importName = ctx.qualifiedName().getText();
+        boolean wildcardImport = ctx.DOT() != null && ctx.MUL() != null;
+        String importName = wildcardImport ?
+            ctx.qualifiedName().getText() + ".*" :
+            ctx.qualifiedName().getText();
         if (importName.startsWith("org.junit")) {
             rewriter.replace(ctx.start, ctx.stop, getJUnit5Import(ctx.STATIC(), importName));
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
@@ -146,6 +149,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private String getJUnit5StaticImport(String importName) {
         return "import static %s;".formatted(
             switch (importName) {
+                case "org.junit.Assert.*" -> "org.junit.jupiter.api.Assertions.*";
                 case "org.junit.Assert.assertEquals" -> "org.junit.jupiter.api.Assertions.assertEquals";
                 case "org.junit.Assert.assertNotEquals" -> "org.junit.jupiter.api.Assertions.assertNotEquals";
                 case "org.junit.Assert.assertNull" -> "org.junit.jupiter.api.Assertions.assertNull";
@@ -169,7 +173,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     case "org.junit.AfterClass" -> "org.junit.jupiter.api.AfterAll";
                     case "org.junit.Ignore" -> "org.junit.jupiter.api.Disabled";
                     case "org.junit.Rule",
-                         "org.junit.rules.ErrorCollector" -> importName;
+                         "org.junit.rules.ErrorCollector",
+                         "org.junit.rules.ExpectedException" -> importName;
                     case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
                     case "org.junit.runner.RunWith" -> "org.junit.jupiter.api.extension.ExtendWith";
                     case "org.junit.runners.Parameterized",

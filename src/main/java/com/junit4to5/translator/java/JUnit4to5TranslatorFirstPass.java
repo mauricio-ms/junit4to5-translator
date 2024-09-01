@@ -166,6 +166,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private String getJUnit5NonStaticImport(String importName) {
         return Optional.of(
                 switch (importName) {
+                    case "org.junit.Assert" -> "org.junit.jupiter.api.Assertions";
                     case "org.junit.Test" -> "org.junit.jupiter.api.Test";
                     case "org.junit.Before" -> "org.junit.jupiter.api.BeforeEach";
                     case "org.junit.BeforeClass" -> "org.junit.jupiter.api.BeforeAll";
@@ -290,24 +291,27 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitClassBodyDeclaration(JavaParser.ClassBodyDeclarationContext ctx) {
-        if (ctx.memberDeclaration().methodDeclaration() != null) {
-            getPublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
-                .ifPresent(this::deleteTokenPlusSpace);
-        }
-
-        Optional.ofNullable(ctx.memberDeclaration().fieldDeclaration())
-            .ifPresent(fieldDeclaration -> {
-                boolean isRule = getAnnotationsStream(ctx)
-                    .anyMatch(a -> a.qualifiedName().getText().equals("Rule"));
-                if (isRule) {
-                    Optional.ofNullable(fieldDeclaration.typeType().classOrInterfaceType())
-                        .filter(t -> t.getText().equals("TestName"))
-                        .ifPresent(__ -> {
-                            isTranslatingTestNameRule = true;
-                            rewriter.delete(ctx.start, ctx.stop);
-                            deleteNextIf(ctx.stop, "\n");
-                        });
+        Optional.ofNullable(ctx.memberDeclaration())
+            .ifPresent(memberDeclaration -> {
+                if (memberDeclaration.methodDeclaration() != null) {
+                    getPublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
+                        .ifPresent(this::deleteTokenPlusSpace);
                 }
+
+                Optional.ofNullable(memberDeclaration.fieldDeclaration())
+                    .ifPresent(fieldDeclaration -> {
+                        boolean isRule = getAnnotationsStream(ctx)
+                            .anyMatch(a -> a.qualifiedName().getText().equals("Rule"));
+                        if (isRule) {
+                            Optional.ofNullable(fieldDeclaration.typeType().classOrInterfaceType())
+                                .filter(t -> t.getText().equals("TestName"))
+                                .ifPresent(__ -> {
+                                    isTranslatingTestNameRule = true;
+                                    rewriter.delete(ctx.start, ctx.stop);
+                                    deleteNextIf(ctx.stop, "\n");
+                                });
+                        }
+                    });
             });
 
         if (isTestBackedByDataProvider(ctx)) {

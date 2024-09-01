@@ -98,6 +98,9 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
+        if (method == null) {
+            return null;
+        }
         Optional.ofNullable(ctx.identifier())
             .flatMap(identifier -> symbolTable.maybeTestInfoUsageMethod(identifier.getText()))
             .ifPresent(testInfoUsageMethod -> {

@@ -127,6 +127,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         String importName = wildcardImport ?
             ctx.qualifiedName().getText() + ".*" :
             ctx.qualifiedName().getText();
+        symbolTable.addImport(importName);
         if (importName.startsWith("org.junit")) {
             rewriter.replace(ctx.start, ctx.stop, getJUnit5Import(ctx.STATIC(), importName));
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
@@ -246,15 +247,39 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                         .map(RuleContext::getText)
                         .orElseGet(() -> {
                             var elementValuePairs = ctx.elementValuePairs().elementValuePair();
-                            if (elementValuePairs.size() != 1) {
+                            int elementValuePairsSize = elementValuePairs.size();
+                            if (elementValuePairsSize == 2) {
+                                var value = elementValuePairs.stream()
+                                    .filter(e -> e.identifier().getText().equals("value"))
+                                    .findFirst()
+                                    .orElseThrow(() -> new IllegalStateException(
+                                        "No value parameter found in annotation: " + ctx.getText()))
+                                    .elementValue()
+                                    .getText();
+                                var location = elementValuePairs.stream()
+                                    .filter(e -> e.identifier().getText().equals("location"))
+                                    .findFirst()
+                                    .orElseThrow(() -> new IllegalStateException(
+                                        "No location parameter found in annotation: " + ctx.getText()))
+                                    .elementValue()
+                                    .getText()
+                                    .replace(".class", "");
+                                return "\"%s#%s\"".formatted(
+                                    symbolTable.getImportFor(location)
+                                        // todo - it's needed to check for wildcard imports to make sure it's
+                                        //  not imported from some other package
+                                        .orElse(location),
+                                    value.substring(1, value.length() - 1));
+                            } else if (elementValuePairsSize == 1) {
+                                var elementValuePair = elementValuePairs.get(0);
+                                if (!"value".equals(elementValuePair.identifier().getText())) {
+                                    throw new IllegalStateException(
+                                        "No value parameter found in annotation: " + ctx.getText());
+                                }
+                                return elementValuePair.elementValue().getText();
+                            } else {
                                 throw new IllegalStateException("Unexpected annotation parameters: " + ctx.getText());
                             }
-                            var elementValuePair = elementValuePairs.get(0);
-                            if (!"value".equals(elementValuePair.identifier().getText())) {
-                                throw new IllegalStateException(
-                                    "No value parameter found in annotation: " + ctx.getText());
-                            }
-                            return elementValuePair.elementValue().getText();
                         })));
                 default -> Optional.empty();
             };

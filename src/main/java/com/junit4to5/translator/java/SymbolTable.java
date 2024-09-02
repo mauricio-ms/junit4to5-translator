@@ -12,11 +12,13 @@ class SymbolTable {
 
     private final Set<JavaParser.MethodDeclarationContext> processedTestInfoUsageMethods;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
+    private final Map<String, String> imports;
     private final Map<String, String> variableTypes;
 
     SymbolTable() {
         processedTestInfoUsageMethods = new HashSet<>();
         testInfoUsageMethods = new HashSet<>();
+        imports = new HashMap<>();
         variableTypes = new HashMap<>();
     }
 
@@ -46,6 +48,15 @@ class SymbolTable {
         processedTestInfoUsageMethods.add(testInfoUsageMethod);
     }
 
+    public Optional<String> getImportFor(String className) {
+        return Optional.ofNullable(imports.get(className));
+    }
+
+    public void addImport(String importName) {
+        String[] importParts = importName.split("\\.");
+        imports.put(importParts[importParts.length-1], importName);
+    }
+
     public String getVariableType(String variable) {
         return variableTypes.get(variable);
     }
@@ -58,6 +69,7 @@ class SymbolTable {
     public String toString() {
         return "SymbolTable{" +
                "testInfoUsageMethods=" + testInfoUsageMethods +
+               ", imports=" + imports +
                ", variableTypes=" + variableTypes +
                '}';
     }

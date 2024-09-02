@@ -285,7 +285,24 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitEnumDeclaration(JavaParser.EnumDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitEnumDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitRecordDeclaration(JavaParser.RecordDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitRecordDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
     public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
         List<String> toIgnore = List.of(
             "BaseHtngCallbackControllerTest");
         if (ctx.EXTENDS() != null && toIgnore.contains(ctx.typeType().classOrInterfaceType().getText())) {
@@ -293,7 +310,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             skip = true;
             return null;
         }
-        return super.visitClassDeclaration(ctx);
+        super.visitClassDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
     }
 
     @Override

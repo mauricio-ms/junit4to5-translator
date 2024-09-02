@@ -128,7 +128,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             ctx.qualifiedName().getText() + ".*" :
             ctx.qualifiedName().getText();
         symbolTable.addImport(importName);
-        if (importName.startsWith("org.junit")) {
+        if (importName.startsWith("org.junit") && !importName.startsWith("org.junit.jupiter")) {
             rewriter.replace(ctx.start, ctx.stop, getJUnit5Import(ctx.STATIC(), importName));
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);

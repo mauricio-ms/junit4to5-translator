@@ -150,8 +150,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return "import static %s;".formatted(
             switch (importName) {
                 case "org.junit.Assert.*" -> "org.junit.jupiter.api.Assertions.*";
+                case "org.junit.Assert.assertArrayEquals" -> "org.junit.jupiter.api.Assertions.assertArrayEquals";
                 case "org.junit.Assert.assertEquals" -> "org.junit.jupiter.api.Assertions.assertEquals";
                 case "org.junit.Assert.assertNotEquals" -> "org.junit.jupiter.api.Assertions.assertNotEquals";
+                case "org.junit.Assert.assertSame" -> "org.junit.jupiter.api.Assertions.assertSame";
                 case "org.junit.Assert.assertNull" -> "org.junit.jupiter.api.Assertions.assertNull";
                 case "org.junit.Assert.assertNotNull" -> "org.junit.jupiter.api.Assertions.assertNotNull";
                 case "org.junit.Assert.assertTrue" -> "org.junit.jupiter.api.Assertions.assertTrue";
@@ -159,6 +161,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 case "org.junit.Assert.assertThrows" -> "org.junit.jupiter.api.Assertions.assertThrows";
                 case "org.junit.Assert.fail" -> "org.junit.jupiter.api.Assertions.fail";
                 case "org.junit.Assume.assumeTrue" -> "org.junit.jupiter.api.Assumptions.assumeTrue";
+                case "org.junit.internal.matchers.ThrowableMessageMatcher.hasMessage" -> importName;
                 default -> throw new IllegalStateException("Unexpected JUnit static import: " + importName);
             });
     }
@@ -175,7 +178,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     case "org.junit.Ignore" -> "org.junit.jupiter.api.Disabled";
                     case "org.junit.Rule",
                          "org.junit.rules.ErrorCollector",
-                         "org.junit.rules.ExpectedException" -> importName;
+                         "org.junit.rules.ExpectedException",
+                         "org.junit.rules.TestRule",
+                         "org.junit.runners.model.Statement",
+                         "org.junit.runner.Description"-> importName; // TODO - review
                     case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
                     case "org.junit.runner.RunWith" -> "org.junit.jupiter.api.extension.ExtendWith";
                     case "org.junit.runners.Parameterized",

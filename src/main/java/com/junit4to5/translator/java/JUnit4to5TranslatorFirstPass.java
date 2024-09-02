@@ -265,6 +265,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 case "DataProviderRunner.class",
                      "Parameterized.class" -> Optional.of(""); // TODO - check if is not needed add a default ExtendWith
                 case "SpringJUnit4ClassRunner.class" -> Optional.of("@ExtendsWith(SpringExtension.class)");
+                case "MockitoJUnitRunner.class" -> Optional.of("@ExtendsWith(MockitoExtension.class)");
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
             };
             case "Before" -> Optional.of("@BeforeEach");

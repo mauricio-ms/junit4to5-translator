@@ -8,4 +8,6 @@ interface Scope {
     void declare(String name, String value);
 
     String resolve(String name);
+
+    int depth();
 }

@@ -39,6 +39,17 @@ abstract class BaseScope implements Scope {
                 .orElse(null);
     }
 
+    @Override
+    public int depth() {
+        int d = 0;
+        Scope current = this;
+        while (current != null) {
+            current = current.enclosing();
+            d++;
+        }
+        return d;
+    }
+
     String get(String name) {
         return symbols.get(name);
     }

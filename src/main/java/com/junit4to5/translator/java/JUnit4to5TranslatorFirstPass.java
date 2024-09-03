@@ -344,7 +344,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitClassBodyDeclaration(JavaParser.ClassBodyDeclarationContext ctx) {
         Optional.ofNullable(ctx.memberDeclaration())
             .ifPresent(memberDeclaration -> {
-                if (memberDeclaration.methodDeclaration() != null) {
+                boolean isAtMainClassScope = currentScope.depth() == 2;
+                if (isAtMainClassScope && memberDeclaration.methodDeclaration() != null) {
                     getPublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
                         .ifPresent(this::deleteTokenPlusSpace);
                 }

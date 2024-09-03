@@ -386,6 +386,16 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitCreator(JavaParser.CreatorContext ctx) {
+        Optional<JavaParser.ClassBodyContext> anonymousClassCreator = Optional.ofNullable(ctx.classCreatorRest())
+            .map(JavaParser.ClassCreatorRestContext::classBody);
+        anonymousClassCreator.ifPresent(__ -> currentScope = new NestedScope(currentScope));
+        super.visitCreator(ctx);
+        anonymousClassCreator.ifPresent(__ -> currentScope = currentScope.enclosing());
+        return null;
+    }
+
+    @Override
     public Void visitFieldDeclaration(JavaParser.FieldDeclarationContext ctx) {
         String variableType = resolveType(ctx.typeType());
         String variableName = ctx.variableDeclarators().variableDeclarator(0)

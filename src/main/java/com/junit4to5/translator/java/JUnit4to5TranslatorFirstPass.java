@@ -26,7 +26,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private static final List<String> IMPORTS_FOR_REMOVAL = List.of(
         "com.tngtech.java.junit.dataprovider.DataProvider",
         "com.tngtech.java.junit.dataprovider.DataProviderRunner",
-        "com.tngtech.java.junit.dataprovider.UseDataProvider");
+        "com.tngtech.java.junit.dataprovider.UseDataProvider",
+        "org.springframework.test.context.junit4.SpringJUnit4ClassRunner");
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
     private static final String LOCAL = "LOCAL";
 
@@ -289,11 +290,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             case "RunWith" -> switch (ctx.elementValue().getText()) {
                 case "DataProviderRunner.class",
                      "Parameterized.class" -> Optional.of(""); // TODO - check if is not needed add a default ExtendWith
-                case "SpringJUnit4ClassRunner.class" -> Optional.of("@ExtendsWith(SpringExtension.class)");
-                case "MockitoJUnitRunner.class" -> Optional.of("@ExtendsWith(MockitoExtension.class)");
+                case "SpringJUnit4ClassRunner.class" -> {
+                    addedImports.add("org.springframework.test.context.junit.jupiter.SpringExtension");
+                    yield Optional.of("@ExtendWith(SpringExtension.class)");
+                }
+                case "MockitoJUnitRunner.class" -> Optional.of("@ExtendWith(MockitoExtension.class)");
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
             };
             case "Before" -> Optional.of("@BeforeEach");
+            case "After" -> Optional.of("@AfterEach");
             case "Ignore" -> Optional.of("@Disabled");
             case "DataProvider" -> Optional.of("");
             default -> Optional.empty();

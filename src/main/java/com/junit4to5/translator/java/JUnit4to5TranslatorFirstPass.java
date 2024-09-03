@@ -333,13 +333,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
         currentScope = new NestedScope(currentScope);
-        List<String> toIgnore = List.of(
-            "BaseHtngCallbackControllerTest");
-        if (ctx.EXTENDS() != null && toIgnore.contains(ctx.typeType().classOrInterfaceType().getText())) {
-            // todo - ignore temporarily
-            skip = true;
-            return null;
-        }
         super.visitClassDeclaration(ctx);
         currentScope = currentScope.enclosing();
         return null;

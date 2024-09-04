@@ -517,14 +517,21 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             rewriter.insertAfter(ctx.block().start, before);
 
             ctx.block().blockStatement()
-                .forEach(stmt -> rewriter.insertBefore(stmt.start, "%4s".formatted("")));
+                .forEach(stmt -> {
+                    String indent = "%4s".formatted("");
+                    rewriter.insertBefore(stmt.start, indent);
+                    Optional.ofNullable(tokens.getTokens(
+                            stmt.start.getTokenIndex(), stmt.stop.getTokenIndex(), JavaLexer.WS))
+                        .ifPresent(stmtTokens -> stmtTokens.stream()
+                            .filter(ws -> ws.getText().contains("\n"))
+                            .forEach(ws -> rewriter.insertAfter(ws, indent)));
+                });
 
             String after = "%4s});%s%1$4s".formatted("", System.lineSeparator());
             rewriter.insertBefore(ctx.block().stop, after);
+            expectedTestAnnotationClause = null;
         }
-        super.visitMethodBody(ctx);
-        expectedTestAnnotationClause = null;
-        return null;
+        return super.visitMethodBody(ctx);
     }
 
     @Override

@@ -135,7 +135,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             ctx.qualifiedName().getText();
         symbolTable.addImport(importName);
         if (importName.startsWith("org.junit") && !importName.startsWith("org.junit.jupiter")) {
-            rewriter.replace(ctx.start, ctx.stop, getJUnit5Import(ctx.STATIC(), importName));
+            getJUnit5Import(ctx.STATIC(), importName)
+                .ifPresentOrElse(jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
+                    () -> {
+                        rewriter.delete(ctx.start, ctx.stop);
+                        deleteNextIf(ctx.stop, "\n");
+                    });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);
             // TODO - this is removing multiple lines, introducing the lexer constants will fix it
@@ -144,12 +149,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return super.visitImportDeclaration(ctx);
     }
 
-    private String getJUnit5Import(
+    private Optional<String> getJUnit5Import(
         TerminalNode staticNode,
         String importName
     ) {
         return staticNode != null ?
-            getJUnit5StaticImport(importName) :
+            Optional.of(getJUnit5StaticImport(importName)) :
             getJUnit5NonStaticImport(importName);
     }
 
@@ -173,8 +178,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             });
     }
 
-    private String getJUnit5NonStaticImport(String importName) {
-        return Optional.of(
+    private Optional<String> getJUnit5NonStaticImport(String importName) {
+        return Optional.ofNullable(
                 switch (importName) {
                     case "org.junit.Assert" -> "org.junit.jupiter.api.Assertions";
                     case "org.junit.Test" -> "org.junit.jupiter.api.Test";
@@ -190,16 +195,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                          "org.junit.runners.model.Statement",
                          "org.junit.runner.Description" -> importName; // TODO - review
                     case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
-                    case "org.junit.runner.RunWith" -> "org.junit.jupiter.api.extension.ExtendWith";
                     case "org.junit.runners.Parameterized",
                          "org.junit.runners.Parameterized.Parameters" -> {
                         skip = true; // TODO - ignore temporarily
                         yield importName;
                     }
+                    case "org.junit.runner.RunWith" -> null;
                     default -> throw new IllegalStateException("Unexpected JUnit import: " + importName);
                 })
-            .map("import %s;"::formatted)
-            .orElse("");
+            .map("import %s;"::formatted);
     }
 
     @Override
@@ -294,12 +298,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return switch (annotationName) {
             case "RunWith" -> switch (ctx.elementValue().getText()) {
                 case "DataProviderRunner.class",
-                     "Parameterized.class" -> Optional.of(""); // TODO - check if is not needed add a default ExtendWith
+                     "Parameterized.class" -> Optional.of("");
                 case "SpringJUnit4ClassRunner.class" -> {
+                    addedImports.add("org.junit.jupiter.api.extension.ExtendWith");
                     addedImports.add("org.springframework.test.context.junit.jupiter.SpringExtension");
                     yield Optional.of("@ExtendWith(SpringExtension.class)");
                 }
                 case "MockitoJUnitRunner.class" -> {
+                    addedImports.add("org.junit.jupiter.api.extension.ExtendWith");
                     addedImports.add("org.mockito.junit.jupiter.MockitoExtension");
                     yield Optional.of("@ExtendWith(MockitoExtension.class)");
                 }

@@ -21,8 +21,12 @@ import antlr.java.JavaLexer;
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
-    private static final List<String> TEST_UTIL_TYPES = List.of(
-        "CaptureAppTestUtil", "EtlTestUtil", "TestNameUtil");
+    private static final Map<String, String> TEST_UTIL_DEPENDENCY_CALLS = Map.of(
+        "CaptureAppTestUtil", "of",
+        "EtlTestUtil", "of",
+        "TestNameUtil", "of");
+    private static final Map<String, String> TEST_UTIL_STATIC_LIBS_CALLS = Map.of(
+        "GoldTable", "start");
     private static final List<String> IMPORTS_FOR_REMOVAL = List.of(
         "com.tngtech.java.junit.dataprovider.DataProvider",
         "com.tngtech.java.junit.dataprovider.DataProviderRunner",
@@ -183,7 +187,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                          "org.junit.rules.ExpectedException",
                          "org.junit.rules.TestRule",
                          "org.junit.runners.model.Statement",
-                         "org.junit.runner.Description"-> importName; // TODO - review
+                         "org.junit.runner.Description" -> importName; // TODO - review
                     case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
                     case "org.junit.runner.RunWith" -> "org.junit.jupiter.api.extension.ExtendWith";
                     case "org.junit.runners.Parameterized",
@@ -413,8 +417,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     }
                 });
 
-            if (isTestUtilTypeCall(ctx.expression(0)) &&
-                "of".equals(getMethodCallIdentifier(ctx.methodCall()))) {
+            if (isTestUtilDependencyCall(ctx) || isTestUtilStaticCall(ctx)) {
                 maybeTestUtilArguments(ctx.methodCall().arguments())
                     .ifPresent(args -> removeClassArgument(
                         args,
@@ -438,15 +441,27 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .map(__ -> "this." + ctx.identifier().getText());
     }
 
-    private boolean isTestUtilTypeCall(JavaParser.ExpressionContext ctx) {
-        return Optional.ofNullable(ctx.getText())
+    private boolean isTestUtilDependencyCall(JavaParser.ExpressionContext ctx) {
+        return Optional.ofNullable(ctx.expression(0).getText())
             .map(symbolTable::getVariableType)
-            .filter(TEST_UTIL_TYPES::contains)
+            .filter(v -> {
+                String methodName = TEST_UTIL_DEPENDENCY_CALLS.get(v);
+                return methodName != null && methodName.equals(getMethodCallIdentifier(ctx.methodCall()));
+            })
+            .isPresent();
+    }
+
+    private boolean isTestUtilStaticCall(JavaParser.ExpressionContext ctx) {
+        return Optional.ofNullable(ctx.expression(0).getText())
+            .filter(v -> {
+                String methodName = TEST_UTIL_STATIC_LIBS_CALLS.get(v);
+                return methodName != null && methodName.equals(getMethodCallIdentifier(ctx.methodCall()));
+            })
             .isPresent();
     }
 
     private boolean isTestUtilTypeCreator(JavaParser.CreatorContext ctx) {
-        return TEST_UTIL_TYPES.contains(ctx.createdName().getText());
+        return TEST_UTIL_DEPENDENCY_CALLS.containsKey(ctx.createdName().getText());
     }
 
     private Optional<List<JavaParser.ExpressionContext>> maybeTestUtilArguments(

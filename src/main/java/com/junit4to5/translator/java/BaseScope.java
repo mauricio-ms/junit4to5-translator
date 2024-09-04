@@ -7,7 +7,7 @@ import java.util.Optional;
 abstract class BaseScope implements Scope {
     private static final String THIS = "this.";
 
-    private final Map<String, String> symbols;
+    private final Map<String, Object> symbols;
     private final Scope enclosingScope;
 
     public BaseScope(Scope enclosingScope) {
@@ -21,7 +21,7 @@ abstract class BaseScope implements Scope {
     }
 
     @Override
-    public void declare(String name, String value) {
+    public void declare(String name, Object value) {
         if (symbols.containsKey(name)) {
             throw new RuntimeException("The symbol '" + name + "' is already declared.");
         }
@@ -30,7 +30,7 @@ abstract class BaseScope implements Scope {
 
     @Override
     public String resolve(String name) {
-        return Optional.ofNullable(symbols.get(name))
+        return (String) Optional.ofNullable(symbols.get(name))
                 .or(() -> Optional.ofNullable(enclosingScope)
                         .map(s -> s.resolve(name))
                         .or(() -> Optional.of(name)
@@ -50,7 +50,7 @@ abstract class BaseScope implements Scope {
         return d;
     }
 
-    String get(String name) {
+    public Object get(String name) {
         return symbols.get(name);
     }
 

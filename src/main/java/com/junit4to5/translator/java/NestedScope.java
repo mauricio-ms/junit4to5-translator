@@ -10,7 +10,7 @@ class NestedScope extends BaseScope {
 
     @Override
     public String resolve(String name) {
-        return Optional.ofNullable(get(name))
+        return (String) Optional.ofNullable(get(name))
                 .orElseGet(() -> super.resolve(name));
     }
 

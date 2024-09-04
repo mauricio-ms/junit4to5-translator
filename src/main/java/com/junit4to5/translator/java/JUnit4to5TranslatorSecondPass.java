@@ -20,7 +20,7 @@ import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
-    private JavaParser.MethodDeclarationContext method;
+    private Scope currentScope;
 
     private final SymbolTable symbolTable;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
@@ -37,6 +37,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
+        currentScope = new GlobalScope();
         super.visitCompilationUnit(ctx);
         if (!testInfoUsageMethods.isEmpty()) {
             testInfoUsageMethods.forEach(symbolTable::addTestInfoUsageMethod);
@@ -88,16 +89,18 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        method = ctx;
-        if (!symbolTable.isTestInfoUsageMethodProcessed(method)) {
+        if (!symbolTable.isTestInfoUsageMethodProcessed(ctx)) {
+            currentScope = new NestedScope(currentScope);
+            currentScope.declare("method", ctx);
             super.visitMethodDeclaration(ctx);
+            currentScope = currentScope.enclosing();
         }
-        method = null;
         return null;
     }
 
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
+        JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
         if (method == null) {
             return null;
         }

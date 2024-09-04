@@ -5,9 +5,11 @@ interface Scope {
 
     Scope enclosing();
 
-    void declare(String name, String value);
+    void declare(String name, Object value);
 
     String resolve(String name);
+
+    Object get(String name);
 
     int depth();
 }

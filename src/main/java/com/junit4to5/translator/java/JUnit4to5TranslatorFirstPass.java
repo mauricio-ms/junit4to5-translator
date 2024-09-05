@@ -111,21 +111,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         String addedImportDeclarations = imports.stream()
             .map(importDeclarationFn)
             .collect(Collectors.joining(System.lineSeparator()));
-        String insertion = "%s%s".formatted(System.lineSeparator(), addedImportDeclarations);
-        if (!isFollowedBy(lastOccurrence.stop, "\n")) {
-            insertion += System.lineSeparator();
+        StringBuilder insertionSb = new StringBuilder();
+        if (prefixOccurrences.isEmpty()) {
+            insertionSb.append(System.lineSeparator());
         }
-        rewriter.insertAfter(lastOccurrence.stop, insertion);
-    }
-
-    private boolean isFollowedBy(Token token, String nextToken) {
-        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
-            token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
-            Token hiddenToken = hiddenTokensToRight.get(0);
-            return hiddenToken.getText().startsWith(nextToken);
-        }
-        return false;
+        insertionSb
+            .append(addedImportDeclarations)
+            .append(System.lineSeparator());
+        rewriter.insertAfter(lastOccurrence.stop, insertionSb.toString());
     }
 
     @Override
@@ -144,8 +137,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);
-            // TODO - this is removing multiple lines, introducing the lexer constants will fix it
-            deleteNextIf(ctx.stop, "\n");
+            deletePreviousIf(ctx.start, "\n");
+            deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
         }
         return super.visitImportDeclaration(ctx);
     }
@@ -341,6 +334,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 .ifPresent(this::deleteTokenPlusSpace);
         }
         return super.visitTypeDeclaration(ctx);
+    }
+
+    private Optional<Token> getPublicToken(Stream<JavaParser.ClassOrInterfaceModifierContext> modifiersStream) {
+        return modifiersStream
+            .map(JavaParser.ClassOrInterfaceModifierContext::PUBLIC)
+            .filter(Objects::nonNull)
+            .map(TerminalNode::getSymbol)
+            .findFirst();
     }
 
     @Override
@@ -613,24 +614,40 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         deleteNextIf(token, " ");
     }
 
-    // TODO - use tokenType instead text, add constants to Java Lexer
-    private void deleteNextIf(Token token, String nextToken) {
-        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
+    private void deletePreviousIf(Token token, String previousToken) {
+        List<Token> hiddenTokensToLeft = tokens.getHiddenTokensToLeft(
             token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
-            Token hiddenToken = hiddenTokensToRight.get(0);
-            if (hiddenToken.getText().startsWith(nextToken)) { // TODO - FIX STARTSWITH
-                rewriter.replace(hiddenToken, "");
+        if (hiddenTokensToLeft != null && !hiddenTokensToLeft.isEmpty()) {
+            Token hiddenToken = hiddenTokensToLeft.get(0);
+            if (hiddenToken.getText().startsWith(previousToken)) {
+                String replacement = "\n".equals(previousToken) ?
+                    hiddenToken.getText().substring(1) :
+                    "";
+                rewriter.replace(hiddenToken, replacement);
             }
         }
     }
 
-    private Optional<Token> getPublicToken(Stream<JavaParser.ClassOrInterfaceModifierContext> modifiersStream) {
-        return modifiersStream
-            .map(JavaParser.ClassOrInterfaceModifierContext::PUBLIC)
-            .filter(Objects::nonNull)
-            .map(TerminalNode::getSymbol)
-            .findFirst();
+    private void deleteNextIf(
+        Token token,
+        String nextToken
+    ) {
+        deleteNextIf(token, nextToken, __ -> "");
+    }
+
+    private void deleteNextIf(
+        Token token,
+        String nextToken,
+        Function<String, String> replacementFn
+    ) {
+        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
+            token.getTokenIndex(), JavaLexer.HIDDEN);
+        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
+            Token hiddenToken = hiddenTokensToRight.get(0);
+            if (hiddenToken.getText().startsWith(nextToken)) {
+                rewriter.replace(hiddenToken, replacementFn.apply(hiddenToken.getText()));
+            }
+        }
     }
 
     public boolean isSkip() {

@@ -21,6 +21,7 @@ public class JUnit4FilesFinderMain {
             throw new IllegalArgumentException("Usage: junit4to5-translator <path>");
         }
 
+        System.out.println("Searching JUnit4 files ...");
         Path path = Paths.get(args[0]);
         if (Files.isDirectory(path)) {
             try (Stream<Path> stream = Files.walk(path)) {

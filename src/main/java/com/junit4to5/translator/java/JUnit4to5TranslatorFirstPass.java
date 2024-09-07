@@ -147,6 +147,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                         deleteNextIf(ctx.stop, "\n");
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
+            // TODO - should remove also:
+            //  rule if all rules were removed
+            //  should add test new import only if there is a non-parameterized test
             rewriter.delete(ctx.start, ctx.stop);
             deletePreviousIf(ctx.start, "\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
@@ -287,6 +290,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
             };
             case "Before" -> Optional.of("@BeforeEach");
+            case "BeforeClass" -> Optional.of("@BeforeAll");
             case "After" -> Optional.of("@AfterEach");
             case "AfterClass" -> Optional.of("@AfterAll");
             case "Ignore" -> Optional.of("@Disabled");

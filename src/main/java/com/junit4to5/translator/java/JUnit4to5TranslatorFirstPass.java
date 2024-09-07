@@ -273,10 +273,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     }
                     yield Optional.of(methodSourceAnnotation);
                 }
-                default -> Optional.empty();
+                default -> maybeAnnotationReplacementDefault(ctx);
             };
         }
 
+        return maybeAnnotationReplacementDefault(ctx);
+    }
+
+    private Optional<String> maybeAnnotationReplacementDefault(JavaParser.AnnotationContext ctx) {
+        String annotationName = ctx.qualifiedName().getText();
         return switch (annotationName) {
             case "RunWith" -> switch (ctx.elementValue().getText()) {
                 case "DataProviderRunner.class",

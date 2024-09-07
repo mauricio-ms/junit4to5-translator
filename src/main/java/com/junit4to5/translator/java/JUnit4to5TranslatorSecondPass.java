@@ -162,6 +162,10 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     }
 
     public void saveOutput(Path outputPath) throws IOException {
-        Files.writeString(outputPath, rewriter.getText(), StandardOpenOption.TRUNCATE_EXISTING);
+        Files.writeString(
+            outputPath,
+            rewriter.getText(),
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING);
     }
 }

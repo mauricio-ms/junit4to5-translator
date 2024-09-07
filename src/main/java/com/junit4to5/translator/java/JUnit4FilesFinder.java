@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Optional;
 
 import org.antlr.v4.runtime.RuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
 
 import antlr.java.JavaParser;
 import antlr.java.JavaParserBaseVisitor;

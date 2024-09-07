@@ -36,7 +36,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
     private static final String LOCAL = "LOCAL";
 
+    private final CrossReferences crossReferences;
+    private final SymbolTable symbolTable;
+    private final Set<String> staticAddedImports;
+    private final Set<String> addedImports;
+
     private Scope currentScope;
+    private String packageDeclaration;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean isTranslatingTestNameRule;
@@ -44,16 +50,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private String expectedTestAnnotationClause;
     private boolean skip;
 
-    private final SymbolTable symbolTable;
-    private final Set<String> staticAddedImports;
-    private final Set<String> addedImports;
-
     JUnit4to5TranslatorFirstPass(
         BufferedTokenStream tokens,
         TokenStreamRewriter rewriter,
+        CrossReferences crossReferences,
         SymbolTable symbolTable
     ) {
         super(tokens, rewriter);
+        this.crossReferences = crossReferences;
         this.symbolTable = symbolTable;
         staticAddedImports = new HashSet<>();
         addedImports = new HashSet<>();
@@ -122,6 +126,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitPackageDeclaration(JavaParser.PackageDeclarationContext ctx) {
+        packageDeclaration = ctx.qualifiedName().getText();
+        return null;
+    }
+
+    @Override
     public Void visitImportDeclaration(JavaParser.ImportDeclarationContext ctx) {
         boolean wildcardImport = ctx.DOT() != null && ctx.MUL() != null;
         String importName = wildcardImport ?
@@ -130,7 +140,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         symbolTable.addImport(importName);
         if (importName.startsWith("org.junit") && !importName.startsWith("org.junit.jupiter")) {
             getJUnit5Import(ctx.STATIC(), importName)
-                .ifPresentOrElse(jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
+                .ifPresentOrElse(
+                    jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
                     () -> {
                         rewriter.delete(ctx.start, ctx.stop);
                         deleteNextIf(ctx.stop, "\n");
@@ -329,9 +340,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitTypeDeclaration(JavaParser.TypeDeclarationContext ctx) {
-        if (ctx.classDeclaration() != null) {
-            getPublicToken(ctx.classOrInterfaceModifier().stream())
-                .ifPresent(this::deleteTokenPlusSpace);
+        var classDeclaration = ctx.classDeclaration();
+        if (classDeclaration != null) {
+            boolean hasCrossReference = crossReferences.hasCrossReference(
+                "%s.%s".formatted(packageDeclaration, classDeclaration.identifier().getText()));
+            if (!hasCrossReference) {
+                getPublicToken(ctx.classOrInterfaceModifier().stream())
+                    .ifPresent(this::deleteTokenPlusSpace);
+            }
         }
         return super.visitTypeDeclaration(ctx);
     }

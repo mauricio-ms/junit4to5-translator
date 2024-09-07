@@ -36,6 +36,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
     private static final String LOCAL = "LOCAL";
 
+    private final BufferedTokenStream tokens;
+    private final TokenStreamRewriter rewriter;
     private final CrossReferences crossReferences;
     private final SymbolTable symbolTable;
     private final Set<String> staticAddedImports;
@@ -43,6 +45,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private Scope currentScope;
     private String packageDeclaration;
+    private String fullyQualifiedName;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean isTranslatingTestNameRule;
@@ -56,7 +59,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         CrossReferences crossReferences,
         SymbolTable symbolTable
     ) {
-        super(tokens, rewriter);
+        this.tokens = tokens;
+        this.rewriter = rewriter;
         this.crossReferences = crossReferences;
         this.symbolTable = symbolTable;
         staticAddedImports = new HashSet<>();
@@ -346,22 +350,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitTypeDeclaration(JavaParser.TypeDeclarationContext ctx) {
         var classDeclaration = ctx.classDeclaration();
         if (classDeclaration != null) {
-            boolean hasCrossReference = crossReferences.hasCrossReference(
-                "%s.%s".formatted(packageDeclaration, classDeclaration.identifier().getText()));
-            if (!hasCrossReference) {
-                getPublicToken(ctx.classOrInterfaceModifier().stream())
+            fullyQualifiedName = "%s.%s".formatted(
+                packageDeclaration, classDeclaration.identifier().getText());
+            if (!crossReferences.hasCrossReference(fullyQualifiedName)) {
+                maybePublicToken(ctx.classOrInterfaceModifier().stream())
                     .ifPresent(this::deleteTokenPlusSpace);
             }
         }
         return super.visitTypeDeclaration(ctx);
-    }
-
-    private Optional<Token> getPublicToken(Stream<JavaParser.ClassOrInterfaceModifierContext> modifiersStream) {
-        return modifiersStream
-            .map(JavaParser.ClassOrInterfaceModifierContext::PUBLIC)
-            .filter(Objects::nonNull)
-            .map(TerminalNode::getSymbol)
-            .findFirst();
     }
 
     @Override
@@ -394,8 +390,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresent(memberDeclaration -> {
                 boolean isAtMainClassScope = currentScope.depth() == 2;
                 if (isAtMainClassScope && memberDeclaration.methodDeclaration() != null) {
-                    getPublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
-                        .ifPresent(this::deleteTokenPlusSpace);
+                    boolean hasCrossReference = crossReferences.hasCrossReference(
+                        "%s.%s".formatted(
+                            fullyQualifiedName,
+                            memberDeclaration.methodDeclaration().identifier().getText()));
+                    if (!hasCrossReference) {
+                        maybePublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
+                            .ifPresent(this::deleteTokenPlusSpace);
+                    }
                 }
 
                 Optional.ofNullable(memberDeclaration.fieldDeclaration())

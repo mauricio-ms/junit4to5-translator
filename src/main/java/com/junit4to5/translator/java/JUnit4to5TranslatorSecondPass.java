@@ -19,18 +19,19 @@ import antlr.java.JavaLexer;
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
-
-    private Scope currentScope;
-
+    private final BufferedTokenStream tokens;
+    private final TokenStreamRewriter rewriter;
     private final SymbolTable symbolTable;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
+    private Scope currentScope;
 
     JUnit4to5TranslatorSecondPass(
         BufferedTokenStream tokens,
         TokenStreamRewriter rewriter,
         SymbolTable symbolTable
     ) {
-        super(tokens, rewriter);
+        this.tokens = tokens;
+        this.rewriter = rewriter;
         this.symbolTable = symbolTable;
         testInfoUsageMethods = new HashSet<>();
     }

@@ -31,9 +31,20 @@ class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
         String importDeclaration = ctx.qualifiedName().getText();
         if (ctx.MUL() != null) {
             importDeclaration += ".*";
+        } else {
+            // for import static cases
+            String possibleTypeName = importDeclaration.substring(0, importDeclaration.lastIndexOf('.'));
+            incrementCrossReferenceTypeIfPresent(possibleTypeName);
+            incrementCrossReferenceTypeIfPresent(importDeclaration);
         }
         importDeclarations.add(importDeclaration);
         return super.visitImportDeclaration(ctx);
+    }
+
+    private void incrementCrossReferenceTypeIfPresent(String type) {
+        if (crossReferences.hasType(type)) {
+            crossReferences.incrementType(type);
+        }
     }
 
     @Override

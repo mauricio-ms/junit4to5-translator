@@ -46,8 +46,8 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         } else {
             symbolTable.getTestInfoUsageMethods().forEach(method -> {
                 var formalParameters = method.formalParameters();
-                addParameterBefore(
-                    formalParameters.stop,
+                addParameterAfter(
+                    formalParameters.LPAREN().getSymbol(),
                     formalParameters.formalParameterList() == null,
                     "TestInfo testInfo");
             });
@@ -55,35 +55,36 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         return null;
     }
 
-    private void addParameterBefore(Token token, boolean unique, String parameter) {
-        maybePreviousTokenAs(token, "\n")
+    private void addParameterAfter(Token token, boolean unique, String parameter) {
+        maybeNewLineNext(token)
             .ifPresentOrElse(
-                nlToken -> rewriter.insertBefore(
+                nlToken -> rewriter.insertAfter(
                     nlToken,
-                    generateNewParameter(unique, "\n%8s".formatted(""), parameter)),
-                () -> rewriter.insertBefore(
+                    "%s%n%8s".formatted(
+                        generateNewParameter(unique, parameter),
+                        "")),
+                () -> rewriter.insertAfter(
                     token,
-                    generateNewParameter(unique, "", parameter)));
+                    generateNewParameter(unique, parameter)));
     }
 
-    // TODO - use tokenType instead text, add constants to Java Lexer
-    private Optional<Token> maybePreviousTokenAs(Token token, String previousToken) {
-        List<Token> hiddenTokensToLeft = tokens.getHiddenTokensToLeft(
+    private Optional<Token> maybeNewLineNext(Token token) {
+        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
             token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToLeft != null && !hiddenTokensToLeft.isEmpty()) {
-            Token hiddenToken = hiddenTokensToLeft.get(0);
-            if (hiddenToken.getText().startsWith(previousToken)) { // TODO - FIX STARTSWITH
+        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
+            Token hiddenToken = hiddenTokensToRight.get(0);
+            if (hiddenToken.getText().startsWith("\n")) {
                 return Optional.of(hiddenToken);
             }
         }
         return Optional.empty();
     }
 
-    private String generateNewParameter(boolean unique, String prefix, String parameter) {
+    private String generateNewParameter(boolean unique, String parameter) {
         if (unique) {
-            return prefix + parameter;
+            return parameter;
         } else {
-            return ", " + prefix + parameter;
+            return parameter + ", ";
         }
     }
 
@@ -118,11 +119,15 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
                 //                System.out.println(methodCallArgumentTypes);
 
                 // Just checking size, the correct would be checking the types also to consider overload methods
-                if (helperMethodParameters.size() == callArgumentsSize) {
+                int helperMethodParametersSize = helperMethodParameters.size();
+                if (helperMethodParametersSize == callArgumentsSize ||
+                    helperMethodParametersSize > 0 &&
+                    helperMethodParametersSize < callArgumentsSize &&
+                    helperMethodParameters.get(helperMethodParametersSize-1).varargs()) {
                     testInfoUsageMethods.add(method);
                     symbolTable.setTestInfoUsageMethodAsProcessed(method);
-                    addParameterBefore(
-                        ctx.arguments().stop,
+                    addParameterAfter(
+                        ctx.arguments().LPAREN().getSymbol(),
                         ctx.arguments().expressionList() == null,
                         "testInfo");
                 }
@@ -131,7 +136,6 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         return super.visitMethodCall(ctx);
     }
 
-    // TODO - maybe remove all of this
     private List<Parameter> getHelperMethodParameters(JavaParser.MethodDeclarationContext ctx) {
         if (ctx.formalParameters() == null || ctx.formalParameters().formalParameterList() == null) {
             return List.of();
@@ -142,11 +146,15 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             .map(p -> new Parameter(resolveType(p.typeType()), p.variableDeclaratorId().getText()));
         Stream<Parameter> lastFormalParameterStream = Stream.of(formalParameters.lastFormalParameter())
             .filter(Objects::nonNull)
-            .map(p -> new Parameter(resolveType(p.typeType()), p.variableDeclaratorId().getText()));
+            .map(p -> new Parameter(
+                resolveType(p.typeType()),
+                p.variableDeclaratorId().getText(),
+                p.ELLIPSIS() != null));
         return Stream.concat(formatParamtersStream, lastFormalParameterStream)
             .toList();
     }
 
+    // TODO - maybe remove
     private List<String> getMethodCallArgumentTypes(JavaParser.MethodCallContext ctx) {
         if (ctx.arguments() == null || ctx.arguments().expressionList() == null) {
             return List.of();
@@ -158,7 +166,10 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             .toList();
     }
 
-    record Parameter(String type, String identifier) {
+    private record Parameter(String type, String identifier, boolean varargs) {
+        private Parameter(String type, String identifier) {
+            this(type, identifier, false);
+        }
     }
 
     public void saveOutput(Path outputPath) throws IOException {

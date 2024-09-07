@@ -26,16 +26,14 @@ public class JUnit4To5TranslatorMain {
     public static void main(String[] args) throws IOException {
         if (args.length > 0) {
             Path argPath = Path.of(args[0]);
-            Function<String, String> outputFn = inputFile ->
-                "output/" + Path.of(inputFile).subpath(1, 2);
             if (Files.isDirectory(argPath)) {
                 try (Stream<Path> filesStream = Files.list(argPath)) {
                     translate(
                         filesStream.map(Path::toString).toList(),
-                        outputFn);
+                        inputFile -> "output/" + Path.of(inputFile).subpath(1, 2));
                 }
             } else {
-                translate(new CrossReferences(), args[0], outputFn.apply(args[0]));
+                translate(new CrossReferences(), args[0], "output/Test.java");
             }
             return;
         }

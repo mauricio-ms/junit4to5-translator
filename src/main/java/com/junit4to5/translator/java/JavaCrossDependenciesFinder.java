@@ -100,8 +100,8 @@ class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
         return importDeclarations.stream()
             .filter(i -> i.endsWith(".*"))
             .map(i -> i.substring(0, i.length() - 2))
-            .filter(i -> crossReferences.hasType(
-                "%s.%s".formatted(i, type)))
+            .map(i -> "%s.%s".formatted(i, type))
+            .filter(crossReferences::hasType)
             .findFirst();
     }
 }

@@ -8,7 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -22,6 +25,7 @@ import antlr.java.JavaLexer;
 import antlr.java.JavaParser;
 
 public class JUnit4To5TranslatorMain {
+    private static final String JUNIT_4 = "JUNIT4";
 
     public static void main(String[] args) throws IOException {
         if (args.length > 0) {
@@ -29,7 +33,7 @@ public class JUnit4To5TranslatorMain {
             if (Files.isDirectory(argPath)) {
                 try (Stream<Path> filesStream = Files.list(argPath)) {
                     translate(
-                        filesStream.map(Path::toString).toList(),
+                        Map.of(JUNIT_4, filesStream.map(Path::toString).toList()),
                         inputFile -> "output/" + Path.of(inputFile).subpath(1, 2));
                 }
             } else {
@@ -39,21 +43,25 @@ public class JUnit4To5TranslatorMain {
         }
         Scanner standardInputScanner = new Scanner(new BufferedInputStream(System.in), StandardCharsets.UTF_8);
 
-        List<String> inputFiles = new ArrayList<>();
+        Map<String, List<String>> inputFiles = new HashMap<>();
         while (standardInputScanner.hasNextLine()) {
-            inputFiles.add(standardInputScanner.nextLine());
+            String[] input = standardInputScanner.nextLine().split(":");
+            inputFiles.computeIfAbsent(input[0], __ -> new ArrayList<>());
+            inputFiles.get(input[0]).add(input[1]);
         }
-
         translate(inputFiles, Function.identity());
     }
 
     private static void translate(
-        List<String> inputFiles,
+        Map<String, List<String>> inputFiles,
         Function<String, String> outputPathFn
     ) throws IOException {
         System.out.println("Computing cross references ...");
-        CrossReferences crossReferences = findCrossReferences(inputFiles);
-        for (String inputFile : inputFiles) {
+        CrossReferences crossReferences = findCrossReferences(
+            inputFiles.values().stream()
+                .flatMap(Collection::stream)
+                .toList());
+        for (String inputFile : inputFiles.get(JUNIT_4)) {
             System.out.println(">> " + inputFile);
             translate(crossReferences, inputFile, outputPathFn.apply(inputFile));
         }

@@ -16,9 +16,11 @@ class JUnit4FilesFinder extends JavaParserBaseVisitor<Void> {
         "org.junit.After",
         "org.junit.AfterClass",
         "org.junit.runner.RunWith");
+    private static final String JUNIT5_IMPORT_PREFIX = "org.junit.jupiter.api.";
 
     private boolean isJUnit4File;
     private boolean isJUnit4TestRule;
+    private boolean isJUnit5File;
 
     // TODO consider wild card imports
     @Override
@@ -26,6 +28,9 @@ class JUnit4FilesFinder extends JavaParserBaseVisitor<Void> {
         isJUnit4File = ctx.importDeclaration().stream()
             .map(i -> i.qualifiedName().getText())
             .anyMatch(JUNIT4_IMPORTS::contains);
+        isJUnit5File = ctx.importDeclaration().stream()
+            .map(i -> i.qualifiedName().getText())
+            .anyMatch(i -> i.startsWith(JUNIT5_IMPORT_PREFIX));
         super.visitCompilationUnit(ctx);
         return null;
     }
@@ -49,5 +54,9 @@ class JUnit4FilesFinder extends JavaParserBaseVisitor<Void> {
 
     public boolean isJUnit4TestRule() {
         return isJUnit4TestRule;
+    }
+
+    public boolean isJUnit5File() {
+        return isJUnit5File;
     }
 }

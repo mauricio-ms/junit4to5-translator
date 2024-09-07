@@ -1,6 +1,10 @@
 # Generated code
 src/main/java/antlr
 
+# Examples
+input/
+output/
+
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

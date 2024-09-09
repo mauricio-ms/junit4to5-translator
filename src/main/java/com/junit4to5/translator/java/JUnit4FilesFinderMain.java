@@ -29,7 +29,8 @@ public class JUnit4FilesFinderMain {
                     .filter(f -> f.endsWith(".java"))
                     .forEach(inputFile -> {
                         JUnit4FilesFinder jUnit4FilesFinder = buildJUnit4FilesFinder(inputFile);
-                        if (inputFile.contains(SRC_TEST_JAVA) || !jUnit4FilesFinder.isJUnit5File()) {
+                        if (!jUnit4FilesFinder.isJUnit4TestRule() &&
+                            (inputFile.contains(SRC_TEST_JAVA) || !jUnit4FilesFinder.isJUnit5File())) {
                             String fileType = jUnit4FilesFinder.isJUnit4File() ? "JUNIT4" : "HELPER";
                             System.out.printf("%s:%s%n", fileType, inputFile);
                         }

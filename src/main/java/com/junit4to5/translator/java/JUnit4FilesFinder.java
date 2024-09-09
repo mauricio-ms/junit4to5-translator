@@ -31,8 +31,7 @@ class JUnit4FilesFinder extends JavaParserBaseVisitor<Void> {
         isJUnit5File = ctx.importDeclaration().stream()
             .map(i -> i.qualifiedName().getText())
             .anyMatch(i -> i.startsWith(JUNIT5_IMPORT_PREFIX));
-        super.visitCompilationUnit(ctx);
-        return null;
+        return super.visitCompilationUnit(ctx);
     }
 
     @Override

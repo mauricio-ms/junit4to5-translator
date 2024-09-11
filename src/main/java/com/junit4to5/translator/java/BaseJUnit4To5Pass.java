@@ -4,10 +4,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStreamRewriter;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import antlr.java.JavaParser;

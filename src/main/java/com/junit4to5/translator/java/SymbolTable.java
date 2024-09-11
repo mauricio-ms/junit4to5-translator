@@ -13,13 +13,11 @@ class SymbolTable {
     private final Set<JavaParser.MethodDeclarationContext> processedTestInfoUsageMethods;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private final Map<String, String> imports;
-    private final Map<String, String> variableTypes;
 
     SymbolTable() {
         processedTestInfoUsageMethods = new HashSet<>();
         testInfoUsageMethods = new HashSet<>();
         imports = new HashMap<>();
-        variableTypes = new HashMap<>();
     }
 
     public void addTestInfoUsageMethod(JavaParser.MethodDeclarationContext helperMethod) {
@@ -57,20 +55,11 @@ class SymbolTable {
         imports.put(importParts[importParts.length-1], importName);
     }
 
-    public String getVariableType(String variable) {
-        return variableTypes.get(variable);
-    }
-
-    public void setVariableType(String variable, String type) {
-        variableTypes.put(variable, type);
-    }
-
     @Override
     public String toString() {
         return "SymbolTable{" +
                "testInfoUsageMethods=" + testInfoUsageMethods +
                ", imports=" + imports +
-               ", variableTypes=" + variableTypes +
                '}';
     }
 }

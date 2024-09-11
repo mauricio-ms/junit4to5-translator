@@ -1,5 +1,6 @@
 package com.junit4to5.translator.java;
 
+import java.util.Objects;
 import java.util.Optional;
 
 import antlr.java.JavaParser;
@@ -46,7 +47,9 @@ class JavaPublicClassesFinder extends BaseJUnit4To5Pass {
             .ifPresent(memberDeclaration -> {
                 boolean isAtMainClassScope = currentScope.depth() == 2;
                 if (isAtMainClassScope && memberDeclaration.methodDeclaration() != null) {
-                    maybePublicToken(ctx.modifier().stream().map(JavaParser.ModifierContext::classOrInterfaceModifier))
+                    maybePublicToken(ctx.modifier().stream()
+                        .map(JavaParser.ModifierContext::classOrInterfaceModifier)
+                        .filter(Objects::nonNull))
                         .ifPresent(__ -> crossReferences.addType(
                             "%s.%s".formatted(
                                 fullyQualifiedName,

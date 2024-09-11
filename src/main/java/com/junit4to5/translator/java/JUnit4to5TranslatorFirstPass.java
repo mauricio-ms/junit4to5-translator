@@ -1,5 +1,6 @@
 package com.junit4to5.translator.java;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -559,7 +560,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         var classArg = args.get(0);
         rewriter.replace(classArg.start, classArg.stop, "");
         rewriter.delete(comma);
-        deleteNextIf(comma, " ");
+        if (!deleteNextIf(comma, " ")) {
+            deleteNextIf(comma, "\n");
+        }
     }
 
     private String getMethodCallIdentifier(JavaParser.MethodCallContext ctx) {
@@ -618,6 +621,25 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
+        var arguments = Optional.ofNullable(ctx.arguments().expressionList())
+            .map(JavaParser.ExpressionListContext::expression)
+            .orElseGet(ArrayList::new);
+
+        if (arguments.size() >= 2) {
+            var first = arguments.get(0);
+            var second = arguments.get(1);
+            if (TEST_NAME_RULE.equals(currentScope.resolve(second.getText())) &&
+                "getClass()".equals(first.getText())) {
+                removeClassArgument(arguments,
+                    ctx.arguments().expressionList().COMMA(0).getSymbol());
+            }
+        }
+
+        return super.visitMethodCall(ctx);
+    }
+
+    @Override
     public Void visitBlock(JavaParser.BlockContext ctx) {
         currentScope = new NestedScope(currentScope);
         super.visitBlock(ctx);
@@ -665,14 +687,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
     }
 
-    private void deleteNextIf(
+    private boolean deleteNextIf(
         Token token,
         String nextToken
     ) {
-        deleteNextIf(token, nextToken, __ -> "");
+        return deleteNextIf(token, nextToken, __ -> "");
     }
 
-    private void deleteNextIf(
+    private boolean deleteNextIf(
         Token token,
         String nextToken,
         Function<String, String> replacementFn
@@ -683,8 +705,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             Token hiddenToken = hiddenTokensToRight.get(0);
             if (hiddenToken.getText().startsWith(nextToken)) {
                 rewriter.replace(hiddenToken, replacementFn.apply(hiddenToken.getText()));
+                return true;
             }
         }
+        return false;
     }
 
     public boolean isSkip() {

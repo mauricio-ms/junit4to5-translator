@@ -17,6 +17,7 @@ import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import antlr.java.JavaLexer;
@@ -481,6 +482,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitLambdaParameters(JavaParser.LambdaParametersContext ctx) {
+        ctx.identifier()
+            .forEach(identifier -> currentScope.declare(identifier.getText(), "notInferredLambdaParameter"));
+        return super.visitLambdaParameters(ctx);
+    }
+
+    @Override
     public Void visitExpression(JavaParser.ExpressionContext ctx) {
         if (ctx.DOT() != null) {
             maybeInstanceVariableAccessViaThis(ctx)
@@ -631,7 +639,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             var second = arguments.get(1);
             if (TEST_NAME_RULE.equals(currentScope.resolve(second.getText())) &&
                 "getClass()".equals(first.getText())) {
-                removeClassArgument(arguments,
+                removeClassArgument(
+                    arguments,
                     ctx.arguments().expressionList().COMMA(0).getSymbol());
             }
         }
@@ -665,6 +674,20 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitEnhancedForControl(JavaParser.EnhancedForControlContext ctx) {
         currentScope.declare(ctx.variableDeclaratorId().getText(), resolveType(ctx.typeType()));
         return super.visitEnhancedForControl(ctx);
+    }
+
+    @Override
+    public Void visitLocalVariableDeclaration(JavaParser.LocalVariableDeclarationContext ctx) {
+        Optional.ofNullable(ctx.VAR())
+            .ifPresentOrElse(
+                v -> currentScope.declare(ctx.identifier().getText(), v.getText()),
+                () -> {
+                    String type = resolveType(ctx.typeType());
+                    for (var varDeclarator : ctx.variableDeclarators().variableDeclarator()) {
+                        currentScope.declare(varDeclarator.variableDeclaratorId().getText(), type);
+                    }
+                });
+        return super.visitLocalVariableDeclaration(ctx);
     }
 
     @Override

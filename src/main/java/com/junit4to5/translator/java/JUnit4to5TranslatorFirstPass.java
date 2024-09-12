@@ -648,11 +648,23 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
-    public Void visitForControl(JavaParser.ForControlContext ctx) {
-        currentScope = new NestedScope(currentScope);
-        super.visitForControl(ctx);
-        currentScope = currentScope.enclosing();
+    public Void visitStatement(JavaParser.StatementContext ctx) {
+        boolean shouldCreateNestedScope = Stream.of(ctx.FOR())
+            .anyMatch(Objects::nonNull);
+        if (shouldCreateNestedScope) {
+            currentScope = new NestedScope(currentScope);
+        }
+        super.visitStatement(ctx);
+        if (shouldCreateNestedScope) {
+            currentScope = currentScope.enclosing();
+        }
         return null;
+    }
+
+    @Override
+    public Void visitEnhancedForControl(JavaParser.EnhancedForControlContext ctx) {
+        currentScope.declare(ctx.variableDeclaratorId().getText(), resolveType(ctx.typeType()));
+        return super.visitEnhancedForControl(ctx);
     }
 
     @Override

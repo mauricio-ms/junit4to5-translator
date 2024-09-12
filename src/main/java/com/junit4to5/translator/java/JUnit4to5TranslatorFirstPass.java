@@ -17,7 +17,6 @@ import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import antlr.java.JavaLexer;
@@ -499,6 +498,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     }
                 });
 
+            maybeOldJUnitAssertCall(ctx)
+                .ifPresent(assertExpr ->
+                    rewriter.replace(assertExpr.start, assertExpr.stop, "Assertions"));
+
+            // TODO - maybe it can be removed
             if (isTestUtilDependencyCall(ctx) || isTestUtilStaticCall(ctx)) {
                 maybeTestUtilArguments(ctx.methodCall().arguments())
                     .ifPresent(args -> removeClassArgument(
@@ -521,6 +525,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .map(JavaParser.ExpressionContext::primary)
             .filter(p -> p.THIS() != null && ctx.identifier() != null)
             .map(__ -> "this." + ctx.identifier().getText());
+    }
+
+    private Optional<JavaParser.ExpressionContext> maybeOldJUnitAssertCall(JavaParser.ExpressionContext ctx) {
+        return Optional.ofNullable(ctx.expression(0))
+            .filter(e -> "Assert".equals(e.getText()));
     }
 
     private boolean isTestUtilDependencyCall(JavaParser.ExpressionContext ctx) {

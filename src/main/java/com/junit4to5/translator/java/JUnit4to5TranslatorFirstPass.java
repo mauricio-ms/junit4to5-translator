@@ -1,6 +1,5 @@
 package com.junit4to5.translator.java;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +49,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean addTestInfoArgumentToMethod;
+    private boolean testNameRuleExpressionProcessed;
     private String expectedTestAnnotationClause;
     private boolean skip;
 
@@ -495,11 +495,21 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitExpression(JavaParser.ExpressionContext ctx) {
         if (ctx.DOT() != null) {
+            maybeTestNameRuleMethodCall(ctx)
+                .ifPresent(methodCall -> {
+                    if (!"getMethodName".equals(methodCall.identifier().getText())) {
+                        throw new IllegalStateException(
+                            "Unexpected test name rule method call: " + methodCall.getText());
+                    }
+                    replaceTestNameRuleArgument(
+                        ctx.start, ctx.stop, "testInfo.getTestMethod().orElseThrow().getName()");
+                });
+
             maybeInstanceVariableAccessViaThis(ctx)
                 .ifPresent(instanceVariable -> {
                     if (TEST_NAME_RULE.equals(currentScope.resolve(instanceVariable))) {
                         addTestInfoArgumentToMethod = true;
-                        rewriter.replace(ctx.start, ctx.stop, "testInfo");
+                        replaceTestNameRuleArgument(ctx.start, ctx.stop, "testInfo");
                     }
                 });
 
@@ -522,7 +532,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                         ctx.creator().classCreatorRest().arguments().expressionList().COMMA(0).getSymbol()));
             }
         }
-        return super.visitExpression(ctx);
+        super.visitExpression(ctx);
+        testNameRuleExpressionProcessed = false;
+        return null;
+    }
+
+    private Optional<JavaParser.MethodCallContext> maybeTestNameRuleMethodCall(JavaParser.ExpressionContext ctx) {
+        return Optional.of(ctx.expression(0))
+            .filter(e -> TEST_NAME_RULE.equals(currentScope.resolve(e.getText())))
+            .map(__ -> ctx.methodCall());
     }
 
     private Optional<String> maybeInstanceVariableAccessViaThis(JavaParser.ExpressionContext ctx) {
@@ -713,11 +731,18 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresent(id -> {
                 if (TEST_NAME_RULE.equals(currentScope.resolve(id.getText()))) {
                     addTestInfoArgumentToMethod = true;
-                    rewriter.replace(id.start, id.stop, "testInfo");
+                    replaceTestNameRuleArgument(id.start, id.stop, "testInfo");
                 }
             });
 
         return super.visitPrimary(ctx);
+    }
+
+    private void replaceTestNameRuleArgument(Token start, Token stop, String replacement) {
+        if (!testNameRuleExpressionProcessed) {
+            rewriter.replace(start, stop, replacement);
+            testNameRuleExpressionProcessed = true;
+        }
     }
 
     private void deleteTokenPlusSpace(Token token) {

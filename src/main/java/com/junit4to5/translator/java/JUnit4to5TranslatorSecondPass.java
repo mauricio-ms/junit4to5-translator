@@ -24,6 +24,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     private final SymbolTable symbolTable;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private Scope currentScope;
+    private boolean isFirstLevelMethodCall;
 
     JUnit4to5TranslatorSecondPass(
         BufferedTokenStream tokens,
@@ -64,15 +65,31 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             super.visitMethodDeclaration(ctx);
             currentScope = currentScope.enclosing();
         }
-        return super.visitMethodDeclaration(ctx);
+        return null;
+    }
+
+    @Override
+    public Void visitExpression(JavaParser.ExpressionContext ctx) {
+        isFirstLevelMethodCall = isFirstLevelMethodCall(ctx);
+        return super.visitExpression(ctx);
+    }
+
+    private boolean isFirstLevelMethodCall(JavaParser.ExpressionContext ctx) {
+        List<JavaParser.ExpressionContext> expression = ctx.expression();
+        if (!expression.isEmpty()) {
+            return expression.get(0).methodCall() != null;
+        } else {
+            return ctx.methodCall() != null;
+        }
     }
 
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
-        if (method == null) {
-            return null;
+        if (!isFirstLevelMethodCall || method == null) {
+            return super.visitMethodCall(ctx);
         }
+
         symbolTable.streamTestInfoUsageMethods(ctx.identifier().getText())
             .filter(testInfoUsageMethod -> {
                 List<Parameter> helperMethodParameters = getHelperMethodParameters(testInfoUsageMethod);
@@ -99,7 +116,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
                     "testInfo");
             });
 
-        return null;
+        return super.visitMethodCall(ctx);
     }
 
     private List<Parameter> getHelperMethodParameters(JavaParser.MethodDeclarationContext ctx) {

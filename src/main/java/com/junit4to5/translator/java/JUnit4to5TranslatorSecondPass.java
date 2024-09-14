@@ -56,14 +56,78 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         return null;
     }
 
+    @Override
+    public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
+        if (!symbolTable.isTestInfoUsageMethodProcessed(ctx)) {
+            currentScope = new NestedScope(currentScope);
+            currentScope.declare("method", ctx);
+            super.visitMethodDeclaration(ctx);
+            currentScope = currentScope.enclosing();
+        }
+        return super.visitMethodDeclaration(ctx);
+    }
+
+    @Override
+    public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
+        JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
+        if (method == null) {
+            return null;
+        }
+        symbolTable.streamTestInfoUsageMethods(ctx.identifier().getText())
+            .filter(testInfoUsageMethod -> {
+                List<Parameter> helperMethodParameters = getHelperMethodParameters(testInfoUsageMethod);
+                int callArgumentsSize = Optional.ofNullable(ctx.arguments())
+                    .map(JavaParser.ArgumentsContext::expressionList)
+                    .map(exprList -> exprList.expression().size())
+                    .orElse(0);
+
+                // Just checking size, the correct would be checking the types also to consider overload methods
+                int helperMethodParametersSize = helperMethodParameters.size();
+
+                return helperMethodParametersSize == callArgumentsSize ||
+                       helperMethodParametersSize > 0 &&
+                       helperMethodParametersSize < callArgumentsSize &&
+                       helperMethodParameters.get(helperMethodParametersSize - 1).varargs();
+            })
+            .findFirst()
+            .ifPresent(testInfoUsageMethod -> {
+                testInfoUsageMethods.add(method);
+                symbolTable.setTestInfoUsageMethodAsProcessed(method);
+                addParameterAfter(
+                    ctx.arguments().LPAREN().getSymbol(),
+                    ctx.arguments().expressionList() == null,
+                    "testInfo");
+            });
+
+        return null;
+    }
+
+    private List<Parameter> getHelperMethodParameters(JavaParser.MethodDeclarationContext ctx) {
+        if (ctx.formalParameters() == null || ctx.formalParameters().formalParameterList() == null) {
+            return List.of();
+        }
+
+        var formalParameters = ctx.formalParameters().formalParameterList();
+        Stream<Parameter> formatParamtersStream = formalParameters.formalParameter().stream()
+            .map(p -> new Parameter(resolveType(p.typeType()), p.variableDeclaratorId().getText()));
+        Stream<Parameter> lastFormalParameterStream = Stream.of(formalParameters.lastFormalParameter())
+            .filter(Objects::nonNull)
+            .map(p -> new Parameter(
+                resolveType(p.typeType()),
+                p.variableDeclaratorId().getText(),
+                p.ELLIPSIS() != null));
+        return Stream.concat(formatParamtersStream, lastFormalParameterStream)
+            .toList();
+    }
+
     private void addParameterAfter(Token token, boolean unique, String parameter) {
         maybeNewLineNext(token)
             .ifPresentOrElse(
                 nlToken -> rewriter.insertAfter(
                     nlToken,
-                    "%s%n%8s".formatted(
+                    "%s%n%s".formatted(
                         generateNewParameter(unique, parameter),
-                        "")),
+                        nlToken.getText().substring(1))),
                 () -> rewriter.insertAfter(
                     token,
                     generateNewParameter(unique, parameter)));
@@ -87,72 +151,6 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         } else {
             return parameter + ", ";
         }
-    }
-
-    @Override
-    public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        if (!symbolTable.isTestInfoUsageMethodProcessed(ctx)) {
-            currentScope = new NestedScope(currentScope);
-            currentScope.declare("method", ctx);
-            super.visitMethodDeclaration(ctx);
-            currentScope = currentScope.enclosing();
-        }
-        return null;
-    }
-
-    @Override
-    public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
-        JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
-        if (method == null) {
-            return null;
-        }
-        Optional.ofNullable(ctx.identifier())
-            .flatMap(identifier -> symbolTable.maybeTestInfoUsageMethod(identifier.getText()))
-            .ifPresent(testInfoUsageMethod -> {
-                // TODO - if not junit annotated, it means nested methods, so throw unsupported exception
-                // TODO - Check if call and declaration matches
-                List<Parameter> helperMethodParameters = getHelperMethodParameters(testInfoUsageMethod);
-                int callArgumentsSize = Optional.ofNullable(ctx.arguments())
-                    .map(JavaParser.ArgumentsContext::expressionList)
-                    .map(exprList -> exprList.expression().size())
-                    .orElse(0);
-                //                List<String> methodCallArgumentTypes = getMethodCallArgumentTypes(ctx);
-                //                System.out.println(methodCallArgumentTypes);
-
-                // Just checking size, the correct would be checking the types also to consider overload methods
-                int helperMethodParametersSize = helperMethodParameters.size();
-                if (helperMethodParametersSize == callArgumentsSize ||
-                    helperMethodParametersSize > 0 &&
-                    helperMethodParametersSize < callArgumentsSize &&
-                    helperMethodParameters.get(helperMethodParametersSize-1).varargs()) {
-                    testInfoUsageMethods.add(method);
-                    symbolTable.setTestInfoUsageMethodAsProcessed(method);
-                    addParameterAfter(
-                        ctx.arguments().LPAREN().getSymbol(),
-                        ctx.arguments().expressionList() == null,
-                        "testInfo");
-                }
-            });
-
-        return super.visitMethodCall(ctx);
-    }
-
-    private List<Parameter> getHelperMethodParameters(JavaParser.MethodDeclarationContext ctx) {
-        if (ctx.formalParameters() == null || ctx.formalParameters().formalParameterList() == null) {
-            return List.of();
-        }
-
-        var formalParameters = ctx.formalParameters().formalParameterList();
-        Stream<Parameter> formatParamtersStream = formalParameters.formalParameter().stream()
-            .map(p -> new Parameter(resolveType(p.typeType()), p.variableDeclaratorId().getText()));
-        Stream<Parameter> lastFormalParameterStream = Stream.of(formalParameters.lastFormalParameter())
-            .filter(Objects::nonNull)
-            .map(p -> new Parameter(
-                resolveType(p.typeType()),
-                p.variableDeclaratorId().getText(),
-                p.ELLIPSIS() != null));
-        return Stream.concat(formatParamtersStream, lastFormalParameterStream)
-            .toList();
     }
 
     // TODO - maybe remove

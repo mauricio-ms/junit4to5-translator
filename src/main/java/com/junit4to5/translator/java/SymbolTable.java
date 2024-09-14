@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import antlr.java.JavaParser;
 
@@ -32,10 +33,9 @@ class SymbolTable {
         return testInfoUsageMethods;
     }
 
-    public Optional<JavaParser.MethodDeclarationContext> maybeTestInfoUsageMethod(String identifier) {
+    public Stream<JavaParser.MethodDeclarationContext> streamTestInfoUsageMethods(String identifier) {
         return testInfoUsageMethods.stream()
-            .filter(m -> m.identifier().getText().equals(identifier))
-            .findFirst();
+            .filter(m -> m.identifier().getText().equals(identifier));
     }
 
     public boolean isTestInfoUsageMethodProcessed(JavaParser.MethodDeclarationContext testInfoUsageMethod) {

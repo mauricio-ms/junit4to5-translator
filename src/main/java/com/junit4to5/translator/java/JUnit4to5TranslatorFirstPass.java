@@ -35,6 +35,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "org.springframework.test.context.junit4.SpringJUnit4ClassRunner",
         "org.mockito.junit.MockitoJUnitRunner");
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
+    private static final List<String> CLASS_ACCESS = List.of("this.getClass()", "getClass()");
 
     private final BufferedTokenStream tokens;
     private final TokenStreamRewriter rewriter;
@@ -520,16 +521,18 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             // TODO - maybe it can be removed
             if (isTestUtilDependencyCall(ctx) || isTestUtilStaticCall(ctx)) {
                 maybeTestUtilArguments(ctx.methodCall().arguments())
-                    .ifPresent(args -> removeClassArgument(
+                    .ifPresent(args -> removeArgument(
+                        ctx.methodCall().arguments().expressionList(),
                         args,
-                        ctx.methodCall().arguments().expressionList().COMMA(0).getSymbol()));
+                        0));
             }
         } else if (ctx.NEW() != null && ctx.creator() != null) {
             if (isTestUtilTypeCreator(ctx.creator())) {
                 maybeTestUtilArguments(ctx.creator().classCreatorRest().arguments())
-                    .ifPresent(args -> removeClassArgument(
+                    .ifPresent(args -> removeArgument(
+                        ctx.creator().classCreatorRest().arguments().expressionList(),
                         args,
-                        ctx.creator().classCreatorRest().arguments().expressionList().COMMA(0).getSymbol()));
+                        0));
             }
         }
         super.visitExpression(ctx);
@@ -593,12 +596,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             });
     }
 
-    private void removeClassArgument(
-        List<JavaParser.ExpressionContext> args,
-        Token comma
+    private void removeArgument(
+        JavaParser.ExpressionListContext expressionList,
+        List<JavaParser.ExpressionContext> arguments,
+        int index
     ) {
-        var classArg = args.get(0);
-        rewriter.replace(classArg.start, classArg.stop, "");
+        var argument = arguments.get(index);
+        var comma = expressionList.COMMA(index).getSymbol();
+        rewriter.replace(argument.start, argument.stop, "");
         rewriter.delete(comma);
         if (!deleteNextIf(comma, " ")) {
             deleteNextIf(comma, "\n");
@@ -672,14 +677,16 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     ) {
         var arguments = expressionList.expression();
         if (arguments.size() >= 2) {
-            var first = arguments.get(0);
-            var second = arguments.get(1);
-            if (TEST_NAME_RULE.equals(currentScope.resolve(second.getText())) &&
-                "getClass()".equals(first.getText())) {
-                removeClassArgument(
-                    arguments,
-                    expressionList.COMMA(0).getSymbol());
-            }
+            arguments.stream()
+                .filter(arg -> TEST_NAME_RULE.equals(currentScope.resolve(arg.getText())))
+                .findFirst()
+                .ifPresent(testNameRuleArg -> {
+                    int indexOf = arguments.indexOf(testNameRuleArg);
+                    if (indexOf > 0 && CLASS_ACCESS.contains(arguments.get(indexOf - 1).getText())) {
+                        removeArgument(
+                            expressionList, arguments, indexOf - 1);
+                    }
+                });
         }
     }
 

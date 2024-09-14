@@ -464,11 +464,16 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitCreator(JavaParser.CreatorContext ctx) {
-        Optional<JavaParser.ClassBodyContext> anonymousClassCreator = Optional.ofNullable(ctx.classCreatorRest())
+        Optional<JavaParser.ClassCreatorRestContext> maybeClassCreator = Optional.ofNullable(ctx.classCreatorRest());
+        maybeClassCreator
+            .map(JavaParser.ClassCreatorRestContext::arguments)
+            .map(JavaParser.ArgumentsContext::expressionList)
+            .ifPresent(this::replaceOldTestNameRuleSignature);
+        Optional<JavaParser.ClassBodyContext> maybeAnonymousClassCreator = maybeClassCreator
             .map(JavaParser.ClassCreatorRestContext::classBody);
-        anonymousClassCreator.ifPresent(__ -> currentScope = new NestedScope(currentScope));
+        maybeAnonymousClassCreator.ifPresent(__ -> currentScope = new NestedScope(currentScope));
         super.visitCreator(ctx);
-        anonymousClassCreator.ifPresent(__ -> currentScope = currentScope.enclosing());
+        maybeAnonymousClassCreator.ifPresent(__ -> currentScope = currentScope.enclosing());
         return null;
     }
 
@@ -639,10 +644,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
-        var arguments = Optional.ofNullable(ctx.arguments().expressionList())
-            .map(JavaParser.ExpressionListContext::expression)
-            .orElseGet(ArrayList::new);
+        Optional.ofNullable(ctx.arguments().expressionList())
+            .ifPresent(this::replaceOldTestNameRuleSignature);
+        return super.visitMethodCall(ctx);
+    }
 
+    private void replaceOldTestNameRuleSignature(
+        JavaParser.ExpressionListContext expressionList
+    ) {
+        var arguments = expressionList.expression();
         if (arguments.size() >= 2) {
             var first = arguments.get(0);
             var second = arguments.get(1);
@@ -650,11 +660,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 "getClass()".equals(first.getText())) {
                 removeClassArgument(
                     arguments,
-                    ctx.arguments().expressionList().COMMA(0).getSymbol());
+                    expressionList.COMMA(0).getSymbol());
             }
         }
-
-        return super.visitMethodCall(ctx);
     }
 
     @Override

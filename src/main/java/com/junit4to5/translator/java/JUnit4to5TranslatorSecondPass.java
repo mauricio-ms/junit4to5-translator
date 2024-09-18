@@ -12,16 +12,14 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
-import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
 
-import antlr.java.JavaLexer;
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
-    private final BufferedTokenStream tokens;
     private final TokenStreamRewriter rewriter;
     private final SymbolTable symbolTable;
+    private final ParameterAdder parameterAdder;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private Scope currentScope;
     private boolean isFirstLevelMethodCall;
@@ -31,9 +29,9 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         TokenStreamRewriter rewriter,
         SymbolTable symbolTable
     ) {
-        this.tokens = tokens;
         this.rewriter = rewriter;
         this.symbolTable = symbolTable;
+        parameterAdder = new ParameterAdder(rewriter, tokens);
         testInfoUsageMethods = new HashSet<>();
     }
 
@@ -48,7 +46,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         } else {
             symbolTable.getTestInfoUsageMethods().forEach(method -> {
                 var formalParameters = method.formalParameters();
-                addParameterAfter(
+                parameterAdder.addAfter(
                     formalParameters.LPAREN().getSymbol(),
                     formalParameters.formalParameterList() == null,
                     "TestInfo testInfo");
@@ -84,6 +82,41 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitCreator(JavaParser.CreatorContext ctx) {
+        JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
+        if (method == null) {
+            return super.visitCreator(ctx);
+        }
+
+        symbolTable.streamTestInfoUsageConstructors(ctx.createdName().getText())
+            .filter(testInfoUsageConstructor -> {
+                List<Parameter> parameters = getParameters(testInfoUsageConstructor.formalParameters());
+                int callArgumentsSize = Optional.ofNullable(ctx.classCreatorRest().arguments())
+                    .map(JavaParser.ArgumentsContext::expressionList)
+                    .map(exprList -> exprList.expression().size())
+                    .orElse(0);
+
+                // Just checking size, the correct would be checking the types also to consider overload methods
+                int parametersSize = parameters.size();
+                return parametersSize == callArgumentsSize ||
+                       parametersSize > 0 &&
+                       parametersSize < callArgumentsSize &&
+                       parameters.get(parametersSize - 1).varargs();
+            })
+            .findFirst()
+            .ifPresent(testInfoUsageMethod -> {
+                testInfoUsageMethods.add(method);
+                symbolTable.setTestInfoUsageMethodAsProcessed(method);
+                parameterAdder.addAfter(
+                    ctx.classCreatorRest().arguments().LPAREN().getSymbol(),
+                    ctx.classCreatorRest().arguments().expressionList() == null,
+                    "testInfo");
+            });
+
+        return super.visitCreator(ctx);
+    }
+
+    @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
         if (!isFirstLevelMethodCall || method == null) {
@@ -92,25 +125,24 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
         symbolTable.streamTestInfoUsageMethods(ctx.identifier().getText())
             .filter(testInfoUsageMethod -> {
-                List<Parameter> helperMethodParameters = getHelperMethodParameters(testInfoUsageMethod);
+                List<Parameter> parameters = getParameters(testInfoUsageMethod.formalParameters());
                 int callArgumentsSize = Optional.ofNullable(ctx.arguments())
                     .map(JavaParser.ArgumentsContext::expressionList)
                     .map(exprList -> exprList.expression().size())
                     .orElse(0);
 
                 // Just checking size, the correct would be checking the types also to consider overload methods
-                int helperMethodParametersSize = helperMethodParameters.size();
-
-                return helperMethodParametersSize == callArgumentsSize ||
-                       helperMethodParametersSize > 0 &&
-                       helperMethodParametersSize < callArgumentsSize &&
-                       helperMethodParameters.get(helperMethodParametersSize - 1).varargs();
+                int parametersSize = parameters.size();
+                return parametersSize == callArgumentsSize ||
+                       parametersSize > 0 &&
+                       parametersSize < callArgumentsSize &&
+                       parameters.get(parametersSize - 1).varargs();
             })
             .findFirst()
             .ifPresent(testInfoUsageMethod -> {
                 testInfoUsageMethods.add(method);
                 symbolTable.setTestInfoUsageMethodAsProcessed(method);
-                addParameterAfter(
+                parameterAdder.addAfter(
                     ctx.arguments().LPAREN().getSymbol(),
                     ctx.arguments().expressionList() == null,
                     "testInfo");
@@ -119,12 +151,12 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         return super.visitMethodCall(ctx);
     }
 
-    private List<Parameter> getHelperMethodParameters(JavaParser.MethodDeclarationContext ctx) {
-        if (ctx.formalParameters() == null || ctx.formalParameters().formalParameterList() == null) {
+    private List<Parameter> getParameters(JavaParser.FormalParametersContext ctx) {
+        if (ctx == null || ctx.formalParameterList() == null) {
             return List.of();
         }
 
-        var formalParameters = ctx.formalParameters().formalParameterList();
+        var formalParameters = ctx.formalParameterList();
         Stream<Parameter> formatParamtersStream = formalParameters.formalParameter().stream()
             .map(p -> new Parameter(resolveType(p.typeType()), p.variableDeclaratorId().getText()));
         Stream<Parameter> lastFormalParameterStream = Stream.of(formalParameters.lastFormalParameter())
@@ -133,41 +165,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
                 resolveType(p.typeType()),
                 p.variableDeclaratorId().getText(),
                 p.ELLIPSIS() != null));
-        return Stream.concat(formatParamtersStream, lastFormalParameterStream)
-            .toList();
-    }
-
-    private void addParameterAfter(Token token, boolean unique, String parameter) {
-        maybeNewLineNext(token)
-            .ifPresentOrElse(
-                nlToken -> rewriter.insertAfter(
-                    nlToken,
-                    "%s%n%s".formatted(
-                        generateNewParameter(unique, parameter),
-                        nlToken.getText().substring(1))),
-                () -> rewriter.insertAfter(
-                    token,
-                    generateNewParameter(unique, parameter)));
-    }
-
-    private Optional<Token> maybeNewLineNext(Token token) {
-        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
-            token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
-            Token hiddenToken = hiddenTokensToRight.get(0);
-            if (hiddenToken.getText().startsWith("\n")) {
-                return Optional.of(hiddenToken);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private String generateNewParameter(boolean unique, String parameter) {
-        if (unique) {
-            return parameter;
-        } else {
-            return parameter + ", ";
-        }
+        return Stream.concat(formatParamtersStream, lastFormalParameterStream).toList();
     }
 
     // TODO - maybe remove

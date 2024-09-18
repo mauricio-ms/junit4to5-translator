@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
+import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
@@ -35,12 +36,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "org.springframework.test.context.junit4.SpringJUnit4ClassRunner",
         "org.mockito.junit.MockitoJUnitRunner");
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
+    private static final String CLASS_SCOPE = "class";
     private static final List<String> CLASS_ACCESS = List.of("this.getClass()", "getClass()");
 
     private final BufferedTokenStream tokens;
     private final TokenStreamRewriter rewriter;
     private final CrossReferences crossReferences;
     private final SymbolTable symbolTable;
+    private final HiddenTokens hiddenTokens;
+    private final ParameterAdder parameterAdder;
     private final Set<String> staticAddedImports;
     private final Set<String> addedImports;
 
@@ -64,6 +68,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         this.rewriter = rewriter;
         this.crossReferences = crossReferences;
         this.symbolTable = symbolTable;
+        hiddenTokens = new HiddenTokens(tokens);
+        parameterAdder = new ParameterAdder(rewriter, tokens);
         staticAddedImports = new HashSet<>();
         addedImports = new HashSet<>();
     }
@@ -384,10 +390,70 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
-        currentScope = new NestedScope(currentScope);
+        currentScope = new NestedScope(currentScope, CLASS_SCOPE);
         super.visitClassDeclaration(ctx);
+        boolean addTestInfoArgumentToConstructor = currentScope
+            .hasBool("addTestInfoArgumentToConstructor");
+        if (addTestInfoArgumentToConstructor) {
+            List<JavaParser.ConstructorDeclarationContext> constructors =
+                (List<JavaParser.ConstructorDeclarationContext>) currentScope.get("constructor");
+            for (JavaParser.ConstructorDeclarationContext constructor : constructors) {
+                symbolTable.addTestInfoUsageConstructor(constructor);
+
+                parameterAdder.addAfter(
+                    constructor.formalParameters().LPAREN().getSymbol(),
+                    constructor.formalParameters().formalParameterList() == null,
+                    "TestInfo testInfo");
+
+                maybeThisCall(constructor)
+                    .ifPresentOrElse(thisCall -> {
+                        Token lParen = thisCall.arguments().LPAREN().getSymbol();
+                        parameterAdder.addAfter(lParen, thisCall.arguments().expressionList() == null, "testInfo");
+                    }, () -> {
+                        Token lBrace = constructor.block().LBRACE().getSymbol();
+                        Token newLine = hiddenTokens.maybeNextAs(lBrace, "\n")
+                            .orElseThrow(() -> new IllegalStateException("\n not found"));
+                        rewriter.insertAfter(lBrace, newLine.getText() + "this.testInfo = testInfo;");
+                    });
+            }
+
+            String instanceVariableDeclaration = "private final TestInfo testInfo;";
+            maybeStartInstanceVariablesSection(ctx.classBody())
+                .ifPresentOrElse(start -> rewriter.insertBefore(start,
+                        "%s\n%8s".formatted(instanceVariableDeclaration, "")),
+                    () -> rewriter.insertAfter(ctx.classBody().LBRACE().getSymbol(),
+                        "\n%8s%s".formatted("", instanceVariableDeclaration)));
+        }
         currentScope = currentScope.enclosing();
         return null;
+    }
+
+    private Optional<JavaParser.MethodCallContext> maybeThisCall(JavaParser.ConstructorDeclarationContext constructor) {
+        JavaParser.BlockContext block = constructor.block();
+        if (block.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return Optional.of(block.blockStatement(0))
+            .map(JavaParser.BlockStatementContext::statement)
+            .flatMap(stmt -> Optional.ofNullable(stmt.expression())
+                .filter(expr -> !expr.isEmpty())
+                .map(expr -> expr.get(0)))
+            .map(JavaParser.ExpressionContext::methodCall)
+            .filter(call -> call.THIS() != null);
+    }
+
+    private Optional<Token> maybeStartInstanceVariablesSection(JavaParser.ClassBodyContext classBody) {
+        Predicate<JavaParser.ModifierContext> isNonStaticModifier = m ->
+            m.classOrInterfaceModifier() != null && m.classOrInterfaceModifier().STATIC() != null;
+        Predicate<JavaParser.ClassBodyDeclarationContext> isNonStaticDeclaration = d ->
+            d.modifier().stream().noneMatch(isNonStaticModifier);
+        Predicate<JavaParser.ClassBodyDeclarationContext> isInstanceVariableDeclaration = d ->
+            d.memberDeclaration() != null && d.memberDeclaration().fieldDeclaration() != null;
+        return classBody.classBodyDeclaration().stream()
+            .filter(isNonStaticDeclaration.and(isInstanceVariableDeclaration))
+            .findFirst()
+            .map(ParserRuleContext::getStart);
     }
 
     @Override
@@ -457,6 +523,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitConstructorDeclaration(JavaParser.ConstructorDeclarationContext ctx) {
+        currentScope.declareList("constructor", ctx);
         currentScope = new NestedScope(currentScope);
         super.visitConstructorDeclaration(ctx);
         currentScope = currentScope.enclosing();
@@ -509,8 +576,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             maybeInstanceVariableAccessViaThis(ctx)
                 .ifPresent(instanceVariable -> {
                     if (TEST_NAME_RULE.equals(currentScope.resolve(instanceVariable))) {
-                        addTestInfoArgumentToMethod = true;
-                        replaceTestNameRuleArgument(ctx.start, ctx.stop, "testInfo");
+                        replaceTestNameRuleArgument(ctx.start, ctx.stop, "testInfo!");
                     }
                 });
 
@@ -737,7 +803,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         Optional.ofNullable(ctx.identifier())
             .ifPresent(id -> {
                 if (TEST_NAME_RULE.equals(currentScope.resolve(id.getText()))) {
-                    addTestInfoArgumentToMethod = true;
                     replaceTestNameRuleArgument(id.start, id.stop, "testInfo");
                 }
             });
@@ -747,6 +812,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private void replaceTestNameRuleArgument(Token start, Token stop, String replacement) {
         if (!testNameRuleExpressionProcessed) {
+            Scope classScope = currentScope.enclosingFor(CLASS_SCOPE);
+            boolean isAtMainClassScope = classScope.depth() == 2;
+            if (isAtMainClassScope) {
+                addTestInfoArgumentToMethod = true;
+            } else {
+                classScope.declare("addTestInfoArgumentToConstructor", true);
+            }
+
             rewriter.replace(start, stop, replacement);
             testNameRuleExpressionProcessed = true;
         }
@@ -758,17 +831,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     private void deletePreviousIf(Token token, String previousToken) {
-        List<Token> hiddenTokensToLeft = tokens.getHiddenTokensToLeft(
-            token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToLeft != null && !hiddenTokensToLeft.isEmpty()) {
-            Token hiddenToken = hiddenTokensToLeft.get(0);
-            if (hiddenToken.getText().startsWith(previousToken)) {
+        hiddenTokens.maybePreviousAs(token, previousToken)
+            .ifPresent(hiddenToken -> {
                 String replacement = "\n".equals(previousToken) ?
                     hiddenToken.getText().substring(1) :
                     "";
                 rewriter.replace(hiddenToken, replacement);
-            }
-        }
+            });
     }
 
     private boolean deleteNextIf(
@@ -783,16 +852,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         String nextToken,
         Function<String, String> replacementFn
     ) {
-        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
-            token.getTokenIndex(), JavaLexer.HIDDEN);
-        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
-            Token hiddenToken = hiddenTokensToRight.get(0);
-            if (hiddenToken.getText().startsWith(nextToken)) {
+        return hiddenTokens.maybeNextAs(token, nextToken)
+            .map(hiddenToken -> {
                 rewriter.replace(hiddenToken, replacementFn.apply(hiddenToken.getText()));
                 return true;
-            }
-        }
-        return false;
+            })
+            .orElse(false);
     }
 
     public boolean isSkip() {

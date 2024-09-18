@@ -6,7 +6,7 @@ class GlobalScope extends BaseScope implements Scope {
     }
 
     @Override
-    public String name() {
+    public String type() {
         return "global";
     }
 }

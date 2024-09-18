@@ -11,22 +11,33 @@ import antlr.java.JavaParser;
 
 class SymbolTable {
 
+    private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
     private final Set<JavaParser.MethodDeclarationContext> processedTestInfoUsageMethods;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private final Map<String, String> imports;
 
     SymbolTable() {
+        testInfoUsageConstructors = new HashSet<>();
         processedTestInfoUsageMethods = new HashSet<>();
         testInfoUsageMethods = new HashSet<>();
         imports = new HashMap<>();
     }
 
-    public void addTestInfoUsageMethod(JavaParser.MethodDeclarationContext helperMethod) {
+    public void addTestInfoUsageConstructor(JavaParser.ConstructorDeclarationContext constructor) {
+        testInfoUsageConstructors.add(constructor);
+    }
+
+    public Stream<JavaParser.ConstructorDeclarationContext> streamTestInfoUsageConstructors(String identifier) {
+        return testInfoUsageConstructors.stream()
+            .filter(m -> m.identifier().getText().equals(identifier));
+    }
+
+    public void addTestInfoUsageMethod(JavaParser.MethodDeclarationContext method) {
 //        if (helperMethods.contains(helperMethod)) { todo - check need
 //            throw new UnsupportedOperationException(
 //                "Overloaded helper methods not implemented: " + helperMethod.getText());
 //        }
-        testInfoUsageMethods.add(helperMethod);
+        testInfoUsageMethods.add(method);
     }
 
     public Set<JavaParser.MethodDeclarationContext> getTestInfoUsageMethods() {
@@ -38,12 +49,12 @@ class SymbolTable {
             .filter(m -> m.identifier().getText().equals(identifier));
     }
 
-    public boolean isTestInfoUsageMethodProcessed(JavaParser.MethodDeclarationContext testInfoUsageMethod) {
-        return processedTestInfoUsageMethods.contains(testInfoUsageMethod);
+    public boolean isTestInfoUsageMethodProcessed(JavaParser.MethodDeclarationContext method) {
+        return processedTestInfoUsageMethods.contains(method);
     }
 
-    public void setTestInfoUsageMethodAsProcessed(JavaParser.MethodDeclarationContext testInfoUsageMethod) {
-        processedTestInfoUsageMethods.add(testInfoUsageMethod);
+    public void setTestInfoUsageMethodAsProcessed(JavaParser.MethodDeclarationContext method) {
+        processedTestInfoUsageMethods.add(method);
     }
 
     public Optional<String> getImportFor(String className) {
@@ -59,6 +70,7 @@ class SymbolTable {
     public String toString() {
         return "SymbolTable{" +
                "testInfoUsageMethods=" + testInfoUsageMethods +
+               ", testInfoUsageConstructors=" + testInfoUsageConstructors +
                ", imports=" + imports +
                '}';
     }

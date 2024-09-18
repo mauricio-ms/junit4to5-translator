@@ -34,7 +34,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "com.tngtech.java.junit.dataprovider.DataProviderRunner",
         "com.tngtech.java.junit.dataprovider.UseDataProvider",
         "org.springframework.test.context.junit4.SpringJUnit4ClassRunner",
-        "org.mockito.junit.MockitoJUnitRunner");
+        "org.mockito.junit.MockitoJUnitRunner",
+        "junit.framework.TestCase");
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
     private static final String CLASS_SCOPE = "class";
     private static final List<String> CLASS_ACCESS = List.of("this.getClass()", "getClass()");
@@ -51,6 +52,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private Scope currentScope;
     private String packageDeclaration;
     private String fullyQualifiedName;
+    private boolean isTestCaseClass;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean addTestInfoArgumentToMethod;
@@ -131,8 +133,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             insertionSb.append(System.lineSeparator());
         }
         insertionSb
+            .append(System.lineSeparator())
             .append(addedImportDeclarations)
-            .append(System.lineSeparator());
+            .append(System.lineSeparator()); // TODO - should include this only if this is not the last import
         rewriter.insertAfter(lastOccurrence.stop, insertionSb.toString());
     }
 
@@ -391,6 +394,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
         currentScope = new NestedScope(currentScope, CLASS_SCOPE);
+        maybeExtendsTestCase(ctx)
+            .ifPresent(testCase -> {
+                isTestCaseClass = true;
+                rewriter.replace(ctx.EXTENDS().getSymbol(), testCase.stop, "");
+                deleteNextIf(testCase.stop, " ");
+            });
         super.visitClassDeclaration(ctx);
         boolean addTestInfoArgumentToConstructor = currentScope
             .hasBool("addTestInfoArgumentToConstructor");
@@ -426,6 +435,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         currentScope = currentScope.enclosing();
         return null;
+    }
+
+    private Optional<JavaParser.TypeTypeContext> maybeExtendsTestCase(JavaParser.ClassDeclarationContext ctx) {
+        return Optional.of(ctx)
+            .filter(c -> c.EXTENDS() != null)
+            .map(JavaParser.ClassDeclarationContext::typeType)
+            .filter(t -> "TestCase".equals(resolveType(t)));
     }
 
     private Optional<JavaParser.MethodCallContext> maybeThisCall(JavaParser.ConstructorDeclarationContext constructor) {
@@ -735,6 +751,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         Optional.ofNullable(ctx.arguments().expressionList())
             .ifPresent(this::replaceOldTestNameRuleSignature);
+        if (isTestCaseClass) {
+            Optional.ofNullable(ctx.identifier())
+                .filter(id -> "assertEquals".equals(id.getText()))
+                .ifPresent(__ -> staticAddedImports.add("org.junit.jupiter.api.Assertions.assertEquals"));
+        }
         return super.visitMethodCall(ctx);
     }
 

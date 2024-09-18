@@ -38,7 +38,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "junit.framework.TestCase");
     private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
     private static final String CLASS_SCOPE = "class";
-    private static final List<String> CLASS_ACCESS = List.of("this.getClass()", "getClass()");
+    private static final List<String> CLASS_ACCESS = List.of(
+        "this.getClass()", "getClass()",
+        // TODO - hardcoded expressions known by return Class type
+        //  correct would be to collect metadata of all classes before translation
+        "helper.getTestClass()");
 
     private final BufferedTokenStream tokens;
     private final TokenStreamRewriter rewriter;

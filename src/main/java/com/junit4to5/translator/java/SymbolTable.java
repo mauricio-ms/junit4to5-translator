@@ -12,13 +12,11 @@ import antlr.java.JavaParser;
 class SymbolTable {
 
     private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
-    private final Set<JavaParser.MethodDeclarationContext> processedTestInfoUsageMethods;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
     private final Map<String, String> imports;
 
     SymbolTable() {
         testInfoUsageConstructors = new HashSet<>();
-        processedTestInfoUsageMethods = new HashSet<>();
         testInfoUsageMethods = new HashSet<>();
         imports = new HashMap<>();
     }
@@ -47,14 +45,6 @@ class SymbolTable {
     public Stream<JavaParser.MethodDeclarationContext> streamTestInfoUsageMethods(String identifier) {
         return testInfoUsageMethods.stream()
             .filter(m -> m.identifier().getText().equals(identifier));
-    }
-
-    public boolean isTestInfoUsageMethodProcessed(JavaParser.MethodDeclarationContext method) {
-        return processedTestInfoUsageMethods.contains(method);
-    }
-
-    public void setTestInfoUsageMethodAsProcessed(JavaParser.MethodDeclarationContext method) {
-        processedTestInfoUsageMethods.add(method);
     }
 
     public Optional<String> getImportFor(String className) {

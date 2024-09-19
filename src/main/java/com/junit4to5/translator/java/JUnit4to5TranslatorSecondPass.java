@@ -4,14 +4,18 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
 
 import antlr.java.JavaParser;
@@ -21,6 +25,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     private final SymbolTable symbolTable;
     private final ParameterAdder parameterAdder;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
+    private final Map<JavaParser.MethodDeclarationContext, List<Token>> testInfoUsageMethodsTokensProcessed;
     private Scope currentScope;
     private boolean isFirstLevelMethodCall;
 
@@ -33,6 +38,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         this.symbolTable = symbolTable;
         parameterAdder = new ParameterAdder(rewriter, tokens);
         testInfoUsageMethods = new HashSet<>();
+        testInfoUsageMethodsTokensProcessed = new HashMap<>();
     }
 
     @Override
@@ -57,12 +63,10 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        if (!symbolTable.isTestInfoUsageMethodProcessed(ctx)) {
-            currentScope = new NestedScope(currentScope);
-            currentScope.declare("method", ctx);
-            super.visitMethodDeclaration(ctx);
-            currentScope = currentScope.enclosing();
-        }
+        currentScope = new NestedScope(currentScope);
+        currentScope.declare("method", ctx);
+        super.visitMethodDeclaration(ctx);
+        currentScope = currentScope.enclosing();
         return null;
     }
 
@@ -84,7 +88,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitCreator(JavaParser.CreatorContext ctx) {
         JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
-        if (method == null) {
+        if (method == null || isProcessed(method, ctx.start)) {
             return super.visitCreator(ctx);
         }
 
@@ -106,7 +110,10 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             .findFirst()
             .ifPresent(testInfoUsageMethod -> {
                 testInfoUsageMethods.add(method);
-                symbolTable.setTestInfoUsageMethodAsProcessed(method);
+                if (!testInfoUsageMethodsTokensProcessed.containsKey(method)) {
+                    testInfoUsageMethodsTokensProcessed.put(method, new ArrayList<>());
+                }
+                testInfoUsageMethodsTokensProcessed.get(method).add(ctx.start);
                 parameterAdder.addAfter(
                     ctx.classCreatorRest().arguments().LPAREN().getSymbol(),
                     ctx.classCreatorRest().arguments().expressionList() == null,
@@ -119,7 +126,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         JavaParser.MethodDeclarationContext method = (JavaParser.MethodDeclarationContext) currentScope.get("method");
-        if (!isFirstLevelMethodCall || method == null) {
+        if (!isFirstLevelMethodCall || method == null || isProcessed(method, ctx.start)) {
             return super.visitMethodCall(ctx);
         }
 
@@ -141,7 +148,10 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             .findFirst()
             .ifPresent(testInfoUsageMethod -> {
                 testInfoUsageMethods.add(method);
-                symbolTable.setTestInfoUsageMethodAsProcessed(method);
+                if (!testInfoUsageMethodsTokensProcessed.containsKey(method)) {
+                    testInfoUsageMethodsTokensProcessed.put(method, new ArrayList<>());
+                }
+                testInfoUsageMethodsTokensProcessed.get(method).add(ctx.start);
                 parameterAdder.addAfter(
                     ctx.arguments().LPAREN().getSymbol(),
                     ctx.arguments().expressionList() == null,
@@ -149,6 +159,13 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             });
 
         return super.visitMethodCall(ctx);
+    }
+
+    private boolean isProcessed(JavaParser.MethodDeclarationContext method, Token token) {
+        return Optional.ofNullable(method)
+            .map(testInfoUsageMethodsTokensProcessed::get)
+            .filter(tokens -> tokens.contains(token))
+            .isPresent();
     }
 
     private List<Parameter> getParameters(JavaParser.FormalParametersContext ctx) {

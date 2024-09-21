@@ -1,28 +1,46 @@
 package com.junit4to5.translator.java;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.RuleContext;
 
 import antlr.java.JavaParser;
-import antlr.java.JavaParserBaseVisitor;
 
-class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
+class JavaCrossDependenciesFinder extends BaseJUnit4To5Pass {
+    private final MetadataTable metadataTable;
     private final CrossReferences crossReferences;
-    private final List<String> importDeclarations;
-    private String packageDeclaration;
+    private final MetadataTable.Metadata.MetadataBuilder metadataBuilder;
 
-    public JavaCrossDependenciesFinder(CrossReferences crossReferences) {
+    private Scope currentScope;
+    private String packageDeclaration;
+    private String fullyQualifiedName;
+    private PackageResolver packageResolver;
+    private boolean addTestInfoArgumentToMethod;
+
+    public JavaCrossDependenciesFinder(MetadataTable metadataTable, CrossReferences crossReferences) {
+        this.metadataTable = metadataTable;
         this.crossReferences = crossReferences;
-        importDeclarations = new ArrayList<>();
+        metadataBuilder = new MetadataTable.Metadata.MetadataBuilder();
+    }
+
+    @Override
+    public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
+        currentScope = new GlobalScope();
+        super.visitCompilationUnit(ctx);
+        if (fullyQualifiedName != null) {
+            metadataTable.put(fullyQualifiedName, metadataBuilder.build());
+        }
+        return null;
     }
 
     @Override
     public Void visitPackageDeclaration(JavaParser.PackageDeclarationContext ctx) {
         packageDeclaration = ctx.qualifiedName().getText();
+        metadataBuilder.setPackageDeclaration(packageDeclaration);
         return null;
     }
 
@@ -37,7 +55,7 @@ class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
             incrementCrossReferenceTypeIfPresent(possibleTypeName);
             incrementCrossReferenceTypeIfPresent(importDeclaration);
         }
-        importDeclarations.add(importDeclaration);
+        metadataBuilder.addImportDeclaration(importDeclaration);
         return super.visitImportDeclaration(ctx);
     }
 
@@ -48,12 +66,91 @@ class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitInterfaceDeclaration(JavaParser.InterfaceDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitInterfaceDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitEnumDeclaration(JavaParser.EnumDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitEnumDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitRecordDeclaration(JavaParser.RecordDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitRecordDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope, CLASS_SCOPE);
+        if (fullyQualifiedName == null) {
+            fullyQualifiedName = "%s.%s".formatted(packageDeclaration, ctx.identifier().getText());
+            if (ctx.EXTENDS() != null) {
+                metadataBuilder.setExtendsIdentifier(TypeResolver.resolve(ctx.typeType()));
+            }
+            packageResolver = getPackageResolverSupplier().get();
+        }
+        super.visitClassDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitClassBodyDeclaration(JavaParser.ClassBodyDeclarationContext ctx) {
+        declareInstanceVariables(ctx, currentScope);
+        return super.visitClassBodyDeclaration(ctx);
+    }
+
+    @Override
+    public Void visitConstructorDeclaration(JavaParser.ConstructorDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitConstructorDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitCreator(JavaParser.CreatorContext ctx) {
+        Optional<JavaParser.ClassBodyContext> maybeAnonymousClassCreator = Optional.ofNullable(ctx.classCreatorRest())
+            .map(JavaParser.ClassCreatorRestContext::classBody);
+        maybeAnonymousClassCreator.ifPresent(__ -> currentScope = new NestedScope(currentScope));
+        super.visitCreator(ctx);
+        maybeAnonymousClassCreator.ifPresent(__ -> currentScope = currentScope.enclosing());
+        return null;
+    }
+
+    @Override
+    public Void visitLambdaExpression(JavaParser.LambdaExpressionContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitLambdaExpression(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitLambdaParameters(JavaParser.LambdaParametersContext ctx) {
+        ctx.identifier()
+            .forEach(identifier -> currentScope.declare(identifier.getText(), "notInferredLambdaParameter"));
+        return super.visitLambdaParameters(ctx);
+    }
+
+    @Override
     public Void visitExpression(JavaParser.ExpressionContext ctx) {
         if (ctx.DOT() != null && ctx.methodCall() != null) {
             String type = ctx.expression(0).getText();
             // TODO - needed to track cross references to methods imported via static import
             // String call = ctx.methodCall().getText();
-            resolveType(type)
+            getPackageResolver()
+                .resolveType(type)
                 .ifPresent(crossReferences::incrementType);
         }
         return super.visitExpression(ctx);
@@ -65,43 +162,103 @@ class JavaCrossDependenciesFinder extends JavaParserBaseVisitor<Void> {
             .collect(Collectors.joining("."));
         // TODO - needed to track cross references to methods imported via static import
         // ctx.typeIdentifier().getText()
-        resolveType(type)
+        getPackageResolver()
+            .resolveType(type)
             .ifPresent(crossReferences::incrementType);
         return super.visitClassOrInterfaceType(ctx);
     }
 
-    /**
-     * Import resolution Java rules:
-     * 1 - check for fully qualified name:
-     * in expression itself
-     * in import declarations
-     * 2 - check in the default package
-     * 3 - check in all wildcard imports
-     */
-    private Optional<String> resolveType(String type) {
-        return resolveFullyQualifiedImport(type)
-            .or(() -> resolveDefaultPackage(type))
-            .or(() -> resolveWildCardImport(type));
+    private PackageResolver getPackageResolver() {
+        return Optional.ofNullable(packageResolver)
+            .orElseGet(getPackageResolverSupplier());
     }
 
-    private Optional<String> resolveFullyQualifiedImport(String type) {
-        return importDeclarations.stream()
-            .filter(i -> i.endsWith("." + type))
-            .findFirst()
-            .filter(crossReferences::hasType);
+    private Supplier<PackageResolver> getPackageResolverSupplier() {
+        return () -> new PackageResolver(
+            packageDeclaration,
+            metadataBuilder.getImportDeclarations(),
+            crossReferences);
     }
 
-    private Optional<String> resolveDefaultPackage(String type) {
-        return Optional.ofNullable("%s.%s".formatted(packageDeclaration, type))
-            .filter(crossReferences::hasType);
+    @Override
+    public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitMethodDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        if (addTestInfoArgumentToMethod) {
+            metadataBuilder.addTestInfoUsageMethod(ctx);
+            addTestInfoArgumentToMethod = false;
+        }
+        return null;
     }
 
-    private Optional<String> resolveWildCardImport(String type) {
-        return importDeclarations.stream()
-            .filter(i -> i.endsWith(".*"))
-            .map(i -> i.substring(0, i.length() - 2))
-            .map(i -> "%s.%s".formatted(i, type))
-            .filter(crossReferences::hasType)
-            .findFirst();
+    @Override
+    public Void visitFormalParameter(JavaParser.FormalParameterContext ctx) {
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
+        return super.visitFormalParameter(ctx);
+    }
+
+    @Override
+    public Void visitLastFormalParameter(JavaParser.LastFormalParameterContext ctx) {
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
+        return super.visitLastFormalParameter(ctx);
+    }
+
+    @Override
+    public Void visitBlock(JavaParser.BlockContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitBlock(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
+    public Void visitStatement(JavaParser.StatementContext ctx) {
+        boolean shouldCreateNestedScope = Stream.of(ctx.FOR())
+            .anyMatch(Objects::nonNull);
+        if (shouldCreateNestedScope) {
+            currentScope = new NestedScope(currentScope);
+        }
+        super.visitStatement(ctx);
+        if (shouldCreateNestedScope) {
+            currentScope = currentScope.enclosing();
+        }
+        return null;
+    }
+
+    @Override
+    public Void visitEnhancedForControl(JavaParser.EnhancedForControlContext ctx) {
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
+        return super.visitEnhancedForControl(ctx);
+    }
+
+    @Override
+    public Void visitLocalVariableDeclaration(JavaParser.LocalVariableDeclarationContext ctx) {
+        Optional.ofNullable(ctx.VAR())
+            .ifPresentOrElse(
+                v -> currentScope.declare(ctx.identifier().getText(), v.getText()),
+                () -> {
+                    String type = TypeResolver.resolve(ctx.typeType());
+                    for (var varDeclarator : ctx.variableDeclarators().variableDeclarator()) {
+                        currentScope.declare(varDeclarator.variableDeclaratorId().getText(), type);
+                    }
+                });
+        return super.visitLocalVariableDeclaration(ctx);
+    }
+
+    @Override
+    public Void visitPrimary(JavaParser.PrimaryContext ctx) {
+        Optional.ofNullable(ctx.identifier())
+            .ifPresent(id -> {
+                if (TEST_NAME_RULE.equals(currentScope.resolve(id.getText()))) {
+                    Scope classScope = currentScope.enclosingFor(CLASS_SCOPE);
+                    boolean isAtMainClassScope = classScope.depth() == 2;
+                    if (isAtMainClassScope) {
+                        addTestInfoArgumentToMethod = true;
+                    }
+                }
+            });
+
+        return super.visitPrimary(ctx);
     }
 }

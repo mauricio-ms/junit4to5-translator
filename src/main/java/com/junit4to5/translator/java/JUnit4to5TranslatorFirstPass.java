@@ -6,7 +6,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -36,8 +35,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "org.springframework.test.context.junit4.SpringJUnit4ClassRunner",
         "org.mockito.junit.MockitoJUnitRunner",
         "junit.framework.TestCase");
-    private static final String TEST_NAME_RULE = "TEST_NAME_RULE";
-    private static final String CLASS_SCOPE = "class";
     private static final List<String> CLASS_ACCESS = List.of(
         "this.getClass()", "getClass()",
         // TODO - hardcoded expressions known by return Class type
@@ -46,6 +43,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private final BufferedTokenStream tokens;
     private final TokenStreamRewriter rewriter;
+    private final MetadataTable metadataTable;
     private final CrossReferences crossReferences;
     private final SymbolTable symbolTable;
     private final HiddenTokens hiddenTokens;
@@ -59,7 +57,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isTestCaseClass;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
-    private boolean addTestInfoArgumentToMethod;
     private boolean testNameRuleExpressionProcessed;
     private String expectedTestAnnotationClause;
     private boolean skip;
@@ -67,11 +64,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     JUnit4to5TranslatorFirstPass(
         BufferedTokenStream tokens,
         TokenStreamRewriter rewriter,
+        MetadataTable metadataTable,
         CrossReferences crossReferences,
         SymbolTable symbolTable
     ) {
         this.tokens = tokens;
         this.rewriter = rewriter;
+        this.metadataTable = metadataTable;
         this.crossReferences = crossReferences;
         this.symbolTable = symbolTable;
         hiddenTokens = new HiddenTokens(tokens);
@@ -84,6 +83,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
         currentScope = new GlobalScope();
         super.visitCompilationUnit(ctx);
+
+        if (metadataTable.streamTestInfoUsageMethod(fullyQualifiedName).findAny().isPresent()) {
+            addedImports.add("org.junit.jupiter.api.TestInfo");
+        }
 
         Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(addedImports);
         importsPerPrefix.forEach((prefix, imports) ->
@@ -220,11 +223,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                          "org.junit.rules.TestRule",
                          "org.junit.runners.model.Statement",
                          "org.junit.runner.Description" -> importName; // TODO - review
-                    case "org.junit.rules.TestName" -> "org.junit.jupiter.api.TestInfo";
                     case "org.junit.runners.Parameterized",
                          "org.junit.runners.Parameterized.Parameters" -> {
                         skip = true; // TODO - ignore temporarily
                         yield importName;
+                    }
+                    case "org.junit.rules.TestName" -> {
+                        addedImports.add("org.junit.jupiter.api.TestInfo");
+                        yield null;
                     }
                     case "org.junit.runner.RunWith" -> null;
                     default -> throw new IllegalStateException("Unexpected JUnit import: " + importName);
@@ -380,6 +386,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitInterfaceDeclaration(JavaParser.InterfaceDeclarationContext ctx) {
+        currentScope = new NestedScope(currentScope);
+        super.visitInterfaceDeclaration(ctx);
+        currentScope = currentScope.enclosing();
+        return null;
+    }
+
+    @Override
     public Void visitEnumDeclaration(JavaParser.EnumDeclarationContext ctx) {
         currentScope = new NestedScope(currentScope);
         super.visitEnumDeclaration(ctx);
@@ -411,7 +425,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             List<JavaParser.ConstructorDeclarationContext> constructors =
                 (List<JavaParser.ConstructorDeclarationContext>) currentScope.get("constructor");
             for (JavaParser.ConstructorDeclarationContext constructor : constructors) {
-                symbolTable.addTestInfoUsageConstructor(constructor);
+                metadataTable.get(fullyQualifiedName)
+                    .addTestInfoUsageConstructor(constructor);
 
                 parameterAdder.addAfter(
                     constructor.formalParameters().LPAREN().getSymbol(),
@@ -445,7 +460,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return Optional.of(ctx)
             .filter(c -> c.EXTENDS() != null)
             .map(JavaParser.ClassDeclarationContext::typeType)
-            .filter(t -> "TestCase".equals(resolveType(t)));
+            .filter(t -> "TestCase".equals(TypeResolver.resolve(t)));
     }
 
     private Optional<JavaParser.MethodCallContext> maybeThisCall(JavaParser.ConstructorDeclarationContext constructor) {
@@ -495,26 +510,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 }
 
                 Optional.ofNullable(memberDeclaration.fieldDeclaration())
-                    .ifPresent(fieldDeclaration -> {
-                        AtomicBoolean isTestNameRule = new AtomicBoolean();
-                        boolean isRule = getAnnotationsStream(ctx)
-                            .anyMatch(a -> a.qualifiedName().getText().equals("Rule"));
-                        if (isRule) {
-                            Optional.ofNullable(fieldDeclaration.typeType().classOrInterfaceType())
-                                .filter(t -> t.getText().equals("TestName"))
-                                .ifPresent(__ -> {
-                                    isTestNameRule.set(true);
-                                    rewriter.delete(ctx.start, ctx.stop);
-                                    deleteNextIf(ctx.stop, "\n");
-                                });
-                        }
-
-                        String variableType = isTestNameRule.get() ?
-                            TEST_NAME_RULE :
-                            resolveType(fieldDeclaration.typeType());
-                        fieldDeclaration.variableDeclarators().variableDeclarator()
-                            .forEach(v -> currentScope.declare(v.variableDeclaratorId().getText(), variableType));
+                    .filter(f -> isTestNameRule(ctx, f))
+                    .ifPresent(__ -> {
+                        rewriter.delete(ctx.start, ctx.stop);
+                        deleteNextIf(ctx.stop, "\n");
                     });
+
+                declareInstanceVariables(ctx, currentScope);
             });
 
         List<String> annotations = getAnnotationsStream(ctx)
@@ -531,14 +533,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         super.visitClassBodyDeclaration(ctx);
         isTranslatingParameterizedTest = false;
         return null;
-    }
-
-    private Stream<JavaParser.AnnotationContext> getAnnotationsStream(JavaParser.ClassBodyDeclarationContext ctx) {
-        return ctx.modifier().stream()
-            .map(JavaParser.ModifierContext::classOrInterfaceModifier)
-            .filter(Objects::nonNull)
-            .map(JavaParser.ClassOrInterfaceModifierContext::annotation)
-            .filter(Objects::nonNull);
     }
 
     @Override
@@ -596,7 +590,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             maybeInstanceVariableAccessViaThis(ctx)
                 .ifPresent(instanceVariable -> {
                     if (TEST_NAME_RULE.equals(currentScope.resolve(instanceVariable))) {
-                        replaceTestNameRuleArgument(ctx.start, ctx.stop, "testInfo!");
+                        replaceTestNameRuleArgument(ctx.start, ctx.stop, "testInfo");
                     }
                 });
 
@@ -707,22 +701,18 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         currentScope = new NestedScope(currentScope);
         super.visitMethodDeclaration(ctx);
         currentScope = currentScope.enclosing();
-        if (addTestInfoArgumentToMethod) {
-            symbolTable.addTestInfoUsageMethod(ctx);
-            addTestInfoArgumentToMethod = false;
-        }
         return null;
     }
 
     @Override
     public Void visitFormalParameter(JavaParser.FormalParameterContext ctx) {
-        currentScope.declare(ctx.variableDeclaratorId().getText(), resolveType(ctx.typeType()));
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
         return super.visitFormalParameter(ctx);
     }
 
     @Override
     public Void visitLastFormalParameter(JavaParser.LastFormalParameterContext ctx) {
-        currentScope.declare(ctx.variableDeclaratorId().getText(), resolveType(ctx.typeType()));
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
         return super.visitLastFormalParameter(ctx);
     }
 
@@ -805,7 +795,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitEnhancedForControl(JavaParser.EnhancedForControlContext ctx) {
-        currentScope.declare(ctx.variableDeclaratorId().getText(), resolveType(ctx.typeType()));
+        currentScope.declare(ctx.variableDeclaratorId().getText(), TypeResolver.resolve(ctx.typeType()));
         return super.visitEnhancedForControl(ctx);
     }
 
@@ -815,7 +805,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresentOrElse(
                 v -> currentScope.declare(ctx.identifier().getText(), v.getText()),
                 () -> {
-                    String type = resolveType(ctx.typeType());
+                    String type = TypeResolver.resolve(ctx.typeType());
                     for (var varDeclarator : ctx.variableDeclarators().variableDeclarator()) {
                         currentScope.declare(varDeclarator.variableDeclaratorId().getText(), type);
                     }
@@ -839,9 +829,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (!testNameRuleExpressionProcessed) {
             Scope classScope = currentScope.enclosingFor(CLASS_SCOPE);
             boolean isAtMainClassScope = classScope.depth() == 2;
-            if (isAtMainClassScope) {
-                addTestInfoArgumentToMethod = true;
-            } else {
+            // TODO - maybe migrate this also to metadata collector phase
+            if (!isAtMainClassScope) {
                 classScope.declare("addTestInfoArgumentToConstructor", true);
             }
 

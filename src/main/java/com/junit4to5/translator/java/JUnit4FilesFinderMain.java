@@ -26,11 +26,10 @@ public class JUnit4FilesFinderMain {
             try (Stream<Path> stream = Files.walk(path)) {
                 stream.filter(Files::isRegularFile)
                     .map(Path::toString)
-                    .filter(f -> f.endsWith(".java"))
+                    .filter(f -> f.contains(SRC_TEST_JAVA) && f.endsWith(".java"))
                     .forEach(inputFile -> {
                         JUnit4FilesFinder jUnit4FilesFinder = buildJUnit4FilesFinder(inputFile);
-                        if (!jUnit4FilesFinder.isJUnit4TestRule() &&
-                            (inputFile.contains(SRC_TEST_JAVA) || !jUnit4FilesFinder.isJUnit5File())) {
+                        if (!jUnit4FilesFinder.isJUnit4TestRule() && !jUnit4FilesFinder.isJUnit5File()) {
                             String fileType = jUnit4FilesFinder.isJUnit4File() ? "JUNIT4" : "HELPER";
                             System.out.printf("%s:%s%n", fileType, inputFile);
                         }

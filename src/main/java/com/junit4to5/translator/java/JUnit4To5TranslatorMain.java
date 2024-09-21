@@ -26,6 +26,7 @@ import antlr.java.JavaParser;
 
 public class JUnit4To5TranslatorMain {
     private static final String JUNIT_4 = "JUNIT4";
+    private static final Map<String, SyntaxTree> SYNTAX_TREE_CACHE = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
         if (args.length > 0) {
@@ -37,7 +38,9 @@ public class JUnit4To5TranslatorMain {
                         inputFile -> "output/" + Path.of(inputFile).subpath(1, 2));
                 }
             } else {
-                translate(new CrossReferences(), args[0], "output/Test.java");
+                CrossReferences crossReferences = new CrossReferences();
+                MetadataTable metadataTable = new MetadataTable(crossReferences);
+                translate(crossReferences, metadataTable, args[0], "output/Test.java");
             }
             return;
         }
@@ -57,66 +60,79 @@ public class JUnit4To5TranslatorMain {
         Function<String, String> outputPathFn
     ) throws IOException {
         System.out.println("Computing cross references ...");
-        CrossReferences crossReferences = findCrossReferences(
+        CrossReferences crossReferences = new CrossReferences();
+        MetadataTable metadataTable = new MetadataTable(crossReferences);
+        findCrossReferences(
+            crossReferences,
+            metadataTable,
             inputFiles.values().stream()
                 .flatMap(Collection::stream)
                 .toList());
         for (String inputFile : inputFiles.get(JUNIT_4)) {
             System.out.println(">> " + inputFile);
-            translate(crossReferences, inputFile, outputPathFn.apply(inputFile));
+            translate(crossReferences, metadataTable, inputFile, outputPathFn.apply(inputFile));
         }
     }
 
-    private static CrossReferences findCrossReferences(List<String> inputFiles) throws IOException {
-        CrossReferences crossReferences = new CrossReferences();
-
+    private static void findCrossReferences(
+        CrossReferences crossReferences,
+        MetadataTable metadataTable,
+        List<String> inputFiles
+    ) {
         for (String inputFile : inputFiles) {
             var tree = buildSyntaxTree(inputFile);
             var classesFinder = new JavaPublicClassesFinder(crossReferences);
-            classesFinder.visit(tree);
+            classesFinder.visit(tree.ruleContext());
         }
 
         for (String inputFile : inputFiles) {
             var tree = buildSyntaxTree(inputFile);
-            var crossDependenciesFinder = new JavaCrossDependenciesFinder(crossReferences);
-            crossDependenciesFinder.visit(tree);
+            var crossDependenciesFinder = new JavaCrossDependenciesFinder(metadataTable, crossReferences);
+            crossDependenciesFinder.visit(tree.ruleContext());
         }
 
-        return crossReferences;
-    }
-
-    private static RuleContext buildSyntaxTree(String inputFile) throws IOException {
-        var input = new FileInputStream(inputFile);
-        var chars = CharStreams.fromStream(input);
-        var lexer = new JavaLexer(chars);
-        var tokens = new CommonTokenStream(lexer);
-        var parser = new JavaParser(tokens);
-        parser.setBuildParseTree(true);
-        JavaParser.CompilationUnitContext compilationUnitContext = parser.compilationUnit();
-        return compilationUnitContext.getRuleContext();
+        for (String inputFile : inputFiles) {
+            var tree = buildSyntaxTree(inputFile);
+            var jUnit4TestNameRecursiveFinder = new JUnit4TestNameRecursiveFinder(metadataTable);
+            jUnit4TestNameRecursiveFinder.visit(tree.ruleContext());
+        }
     }
 
     private static void translate(
         CrossReferences crossReferences,
+        MetadataTable metadataTable,
         String inputFile,
         String outputFile
     ) throws IOException {
-        var input = new FileInputStream(inputFile);
-        var chars = CharStreams.fromStream(input);
-        var lexer = new JavaLexer(chars);
-        var tokens = new CommonTokenStream(lexer);
-        var parser = new JavaParser(tokens);
-        parser.setBuildParseTree(true);
-        JavaParser.CompilationUnitContext compilationUnitContext = parser.compilationUnit();
-        var tree = compilationUnitContext.getRuleContext();
-        TokenStreamRewriter tokenStreamRewriter = new TokenStreamRewriter(tokens);
+        var tree = buildSyntaxTree(inputFile);
+        TokenStreamRewriter tokenStreamRewriter = new TokenStreamRewriter(tree.tokens());
         SymbolTable symbolTable = new SymbolTable();
-        var firstPass = new JUnit4to5TranslatorFirstPass(tokens, tokenStreamRewriter, crossReferences, symbolTable);
-        firstPass.visit(tree);
+        var firstPass = new JUnit4to5TranslatorFirstPass(
+            tree.tokens(), tokenStreamRewriter, metadataTable, crossReferences, symbolTable);
+        firstPass.visit(tree.ruleContext());
         if (!firstPass.isSkip()) {
-            var secondPass = new JUnit4to5TranslatorSecondPass(tokens, tokenStreamRewriter, symbolTable);
-            secondPass.visit(tree);
+            var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), tokenStreamRewriter, metadataTable);
+            secondPass.visit(tree.ruleContext());
             secondPass.saveOutput(Paths.get(outputFile));
         }
     }
+
+    private static SyntaxTree buildSyntaxTree(String inputFile) {
+        return SYNTAX_TREE_CACHE.computeIfAbsent(inputFile, f -> {
+            try {
+                var input = new FileInputStream(f);
+                var chars = CharStreams.fromStream(input);
+                var lexer = new JavaLexer(chars);
+                var tokens = new CommonTokenStream(lexer);
+                var parser = new JavaParser(tokens);
+                parser.setBuildParseTree(true);
+                JavaParser.CompilationUnitContext compilationUnitContext = parser.compilationUnit();
+                return new SyntaxTree(compilationUnitContext.getRuleContext(), tokens);
+            } catch (IOException e) {
+                throw new IllegalArgumentException("File %s not found:".formatted(f), e);
+            }
+        });
+    }
+
+    private record SyntaxTree(RuleContext ruleContext, CommonTokenStream tokens) {}
 }

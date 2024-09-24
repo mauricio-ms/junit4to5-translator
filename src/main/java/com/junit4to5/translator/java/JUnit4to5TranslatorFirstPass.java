@@ -22,6 +22,7 @@ import antlr.java.JavaLexer;
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
+    static final String METHOD_SCOPE = "method";
     private static final Map<String, String> TEST_UTIL_DEPENDENCY_CALLS = Map.of(
         "CaptureAppTestUtil", "of",
         "EtlTestUtil", "of",
@@ -58,9 +59,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean testNameRuleExpressionProcessed;
-    private boolean addTestInfoArgumentToMethod;
     private String expectedTestAnnotationClause;
-    private boolean skip;
 
     JUnit4to5TranslatorFirstPass(
         BufferedTokenStream tokens,
@@ -224,16 +223,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                          "org.junit.rules.TestRule",
                          "org.junit.runners.model.Statement",
                          "org.junit.runner.Description" -> importName; // TODO - review
-                    case "org.junit.runners.Parameterized",
-                         "org.junit.runners.Parameterized.Parameters" -> {
-                        skip = true; // TODO - ignore temporarily
-                        yield importName;
-                    }
                     case "org.junit.rules.TestName" -> {
                         addedImports.add("org.junit.jupiter.api.TestInfo");
                         yield null;
                     }
-                    case "org.junit.runner.RunWith" -> null;
+                    case "org.junit.runner.RunWith",
+                         "org.junit.runners.Parameterized",
+                         // TODO - check how to translate this to JUnit5
+                         "org.junit.runners.Parameterized.Parameters" -> null;
                     default -> throw new IllegalStateException("Unexpected JUnit import: " + importName);
                 })
             .map("import %s;"::formatted);
@@ -707,13 +704,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        currentScope = new NestedScope(currentScope);
+        currentScope = new NestedScope(currentScope, METHOD_SCOPE);
         super.visitMethodDeclaration(ctx);
-        currentScope = currentScope.enclosing();
-        if (addTestInfoArgumentToMethod) {
+        if (currentScope.hasBool("addTestInfoArgumentToMethod")) {
             metadataTable.get(fullyQualifiedName).addTestInfoUsageMethod(ctx);
-            addTestInfoArgumentToMethod = false;
         }
+        currentScope = currentScope.enclosing();
         return null;
     }
 
@@ -845,7 +841,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             if (!classScope.hasBool("$main")) {
                 classScope.declare("addTestInfoArgumentToConstructor", true);
             } else {
-                addTestInfoArgumentToMethod = true;
+                Scope methodScope = currentScope.enclosingFor(METHOD_SCOPE);
+                if (!methodScope.hasBool("addTestInfoArgumentToMethod")) {
+                    methodScope
+                        .declare("addTestInfoArgumentToMethod", true);
+                }
             }
 
             rewriter.replace(start, stop, replacement);
@@ -886,9 +886,5 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 return true;
             })
             .orElse(false);
-    }
-
-    public boolean isSkip() {
-        return skip;
     }
 }

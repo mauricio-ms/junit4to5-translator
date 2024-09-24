@@ -110,11 +110,9 @@ public class JUnit4To5TranslatorMain {
         var firstPass = new JUnit4to5TranslatorFirstPass(
             tree.tokens(), tokenStreamRewriter, metadataTable, crossReferences, symbolTable);
         firstPass.visit(tree.ruleContext());
-        if (!firstPass.isSkip()) {
-            var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), tokenStreamRewriter, metadataTable);
-            secondPass.visit(tree.ruleContext());
-            secondPass.saveOutput(Paths.get(outputFile));
-        }
+        var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), tokenStreamRewriter, metadataTable);
+        secondPass.visit(tree.ruleContext());
+        secondPass.saveOutput(Paths.get(outputFile));
     }
 
     private static SyntaxTree buildSyntaxTree(String inputFile) {

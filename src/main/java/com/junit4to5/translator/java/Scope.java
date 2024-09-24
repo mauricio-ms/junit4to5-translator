@@ -1,5 +1,7 @@
 package com.junit4to5.translator.java;
 
+import java.util.Map;
+
 interface Scope {
     String type();
 
@@ -16,6 +18,8 @@ interface Scope {
     Object get(String name);
 
     boolean hasBool(String name);
+
+    Map<String, Object> getSymbols();
 
     int depth();
 }

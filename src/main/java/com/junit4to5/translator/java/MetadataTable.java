@@ -18,6 +18,7 @@ class MetadataTable {
         private final String packageDeclaration;
         private final String extendsIdentifier;
         private final List<String> importDeclarations;
+        private final Map<String, Object> instanceVariables;
         private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
         private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
 
@@ -25,14 +26,20 @@ class MetadataTable {
             String packageDeclaration,
             String extendsIdentifier,
             List<String> importDeclarations,
+            Map<String, Object> instanceVariables,
             Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors,
             Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods
         ) {
             this.packageDeclaration = packageDeclaration;
             this.extendsIdentifier = extendsIdentifier;
             this.importDeclarations = importDeclarations;
+            this.instanceVariables = instanceVariables;
             this.testInfoUsageConstructors = testInfoUsageConstructors;
             this.testInfoUsageMethods = testInfoUsageMethods;
+        }
+
+        public Map<String, Object> getInstanceVariables() {
+            return instanceVariables;
         }
 
         public void addTestInfoUsageConstructor(JavaParser.ConstructorDeclarationContext testInfoUsageConstructor) {
@@ -59,6 +66,7 @@ class MetadataTable {
         static class MetadataBuilder {
             private String packageDeclaration;
             private String extendsIdentifier;
+            private Map<String, Object> instanceVariables;
             private final List<String> importDeclarations;
             private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
 
@@ -73,6 +81,10 @@ class MetadataTable {
 
             public void setExtendsIdentifier(String extendsIdentifier) {
                 this.extendsIdentifier = extendsIdentifier;
+            }
+
+            public void setInstanceVariables(Map<String, Object> instanceVariables) {
+                this.instanceVariables = instanceVariables;
             }
 
             public List<String> getImportDeclarations() {
@@ -92,6 +104,7 @@ class MetadataTable {
                     Objects.requireNonNull(packageDeclaration, "packageDeclaration"),
                     extendsIdentifier,
                     importDeclarations,
+                    Optional.ofNullable(instanceVariables).orElseGet(HashMap::new),
                     new HashSet<>(),
                     testInfoUsageMethods);
             }
@@ -208,6 +221,21 @@ class MetadataTable {
 
     public Metadata get(String fullyQualifiedClassName) {
         return Optional.ofNullable(table.get(fullyQualifiedClassName))
+            .orElseThrow(() -> new IllegalStateException(fullyQualifiedClassName + " not found in metadata table."));
+    }
+
+    public Metadata getBase(String fullyQualifiedClassName) {
+        return Optional.ofNullable(table.get(fullyQualifiedClassName))
+            .map(metadata -> {
+                PackageResolver packageResolver = new PackageResolver(
+                    metadata.packageDeclaration,
+                    metadata.importDeclarations,
+                    crossReferences);
+
+                return packageResolver.resolveType(metadata.extendsIdentifier)
+                    .map(this::get)
+                    .orElse(null);
+            })
             .orElseThrow(() -> new IllegalStateException(fullyQualifiedClassName + " not found in metadata table."));
     }
 

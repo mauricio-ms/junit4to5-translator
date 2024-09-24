@@ -58,6 +58,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean testNameRuleExpressionProcessed;
+    private boolean addTestInfoArgumentToMethod;
     private String expectedTestAnnotationClause;
     private boolean skip;
 
@@ -411,7 +412,16 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitClassDeclaration(JavaParser.ClassDeclarationContext ctx) {
+        boolean isBeforeMainClassScope = currentScope.depth() == 1;
+        if (isBeforeMainClassScope && ctx.EXTENDS() != null) {
+            currentScope = new NestedScope(currentScope);
+            Map<String, Object> instanceVariables = metadataTable.getBase(fullyQualifiedName)
+                .getInstanceVariables();
+            instanceVariables.forEach(currentScope::declare);
+        }
+
         currentScope = new NestedScope(currentScope, CLASS_SCOPE);
+        currentScope.declare("$main", isBeforeMainClassScope);
         maybeExtendsTestCase(ctx)
             .ifPresent(testCase -> {
                 isTestCaseClass = true;
@@ -495,8 +505,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitClassBodyDeclaration(JavaParser.ClassBodyDeclarationContext ctx) {
         Optional.ofNullable(ctx.memberDeclaration())
             .ifPresent(memberDeclaration -> {
-                boolean isAtMainClassScope = currentScope.depth() == 2;
-                if (isAtMainClassScope && memberDeclaration.methodDeclaration() != null) {
+                if (currentScope.hasBool("$main") && memberDeclaration.methodDeclaration() != null) {
                     boolean hasCrossReference = crossReferences.hasCrossReference(
                         "%s.%s".formatted(
                             fullyQualifiedName,
@@ -701,6 +710,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         currentScope = new NestedScope(currentScope);
         super.visitMethodDeclaration(ctx);
         currentScope = currentScope.enclosing();
+        if (addTestInfoArgumentToMethod) {
+            metadataTable.get(fullyQualifiedName).addTestInfoUsageMethod(ctx);
+            addTestInfoArgumentToMethod = false;
+        }
         return null;
     }
 
@@ -828,10 +841,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private void replaceTestNameRuleArgument(Token start, Token stop, String replacement) {
         if (!testNameRuleExpressionProcessed) {
             Scope classScope = currentScope.enclosingFor(CLASS_SCOPE);
-            boolean isAtMainClassScope = classScope.depth() == 2;
             // TODO - maybe migrate this also to metadata collector phase
-            if (!isAtMainClassScope) {
+            if (!classScope.hasBool("$main")) {
                 classScope.declare("addTestInfoArgumentToConstructor", true);
+            } else {
+                addTestInfoArgumentToMethod = true;
             }
 
             rewriter.replace(start, stop, replacement);

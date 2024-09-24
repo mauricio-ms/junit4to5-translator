@@ -63,17 +63,6 @@ abstract class BaseScope implements Scope {
     }
 
     @Override
-    public int depth() {
-        int d = 0;
-        Scope current = this;
-        while (current != null) {
-            current = current.enclosing();
-            d++;
-        }
-        return d;
-    }
-
-    @Override
     public Object get(String name) {
         return symbols.get(name);
     }
@@ -82,6 +71,22 @@ abstract class BaseScope implements Scope {
     public boolean hasBool(String name) {
         Object v = get(name);
         return v != null && (boolean) v;
+    }
+
+    @Override
+    public Map<String, Object> getSymbols() {
+        return symbols;
+    }
+
+    @Override
+    public int depth() {
+        int d = 0;
+        Scope current = this;
+        while (current != null) {
+            current = current.enclosing();
+            d++;
+        }
+        return d;
     }
 
     @Override

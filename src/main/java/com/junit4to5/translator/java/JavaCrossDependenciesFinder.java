@@ -100,6 +100,10 @@ class JavaCrossDependenciesFinder extends BaseJUnit4To5Pass {
             packageResolver = getPackageResolverSupplier().get();
         }
         super.visitClassDeclaration(ctx);
+        boolean isAtMainClassScope = currentScope.depth() == 2;
+        if (isAtMainClassScope) {
+            metadataBuilder.setInstanceVariables(currentScope.getSymbols());
+        }
         currentScope = currentScope.enclosing();
         return null;
     }

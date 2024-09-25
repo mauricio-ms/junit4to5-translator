@@ -59,10 +59,10 @@ public class JUnit4To5TranslatorMain {
         Map<String, List<String>> inputFiles,
         Function<String, String> outputPathFn
     ) throws IOException {
-        System.out.println("Computing cross references ...");
+        System.out.println("Collecting classes metadata ...");
         CrossReferences crossReferences = new CrossReferences();
         MetadataTable metadataTable = new MetadataTable(crossReferences);
-        findCrossReferences(
+        collectMetadata(
             crossReferences,
             metadataTable,
             inputFiles.values().stream()
@@ -74,7 +74,7 @@ public class JUnit4To5TranslatorMain {
         }
     }
 
-    private static void findCrossReferences(
+    private static void collectMetadata(
         CrossReferences crossReferences,
         MetadataTable metadataTable,
         List<String> inputFiles
@@ -87,8 +87,8 @@ public class JUnit4To5TranslatorMain {
 
         for (String inputFile : inputFiles) {
             var tree = buildSyntaxTree(inputFile);
-            var crossDependenciesFinder = new JavaCrossDependenciesFinder(metadataTable, crossReferences);
-            crossDependenciesFinder.visit(tree.ruleContext());
+            var metadataCollector = new JavaMetadataCollector(metadataTable, crossReferences);
+            metadataCollector.visit(tree.ruleContext());
         }
 
         for (String inputFile : inputFiles) {

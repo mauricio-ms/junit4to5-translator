@@ -14,6 +14,7 @@ final class TypeResolver {
     public static String resolve(JavaParser.TypeTypeContext type) {
         return Optional.ofNullable(type)
             .map(t -> Optional.ofNullable(t.classOrInterfaceType())
+                .map(JavaParser.ClassOrInterfaceTypeContext::typeIdentifier)
                 .map(RuleContext::getText)
                 .orElseGet(() -> t.primitiveType().getText()))
             .orElse("unknown");

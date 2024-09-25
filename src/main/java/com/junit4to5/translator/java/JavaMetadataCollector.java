@@ -10,7 +10,7 @@ import org.antlr.v4.runtime.RuleContext;
 
 import antlr.java.JavaParser;
 
-class JavaCrossDependenciesFinder extends BaseJUnit4To5Pass {
+class JavaMetadataCollector extends BaseJUnit4To5Pass {
     private final MetadataTable metadataTable;
     private final CrossReferences crossReferences;
     private final MetadataTable.Metadata.MetadataBuilder metadataBuilder;
@@ -21,7 +21,7 @@ class JavaCrossDependenciesFinder extends BaseJUnit4To5Pass {
     private PackageResolver packageResolver;
     private boolean addTestInfoArgumentToMethod;
 
-    public JavaCrossDependenciesFinder(MetadataTable metadataTable, CrossReferences crossReferences) {
+    public JavaMetadataCollector(MetadataTable metadataTable, CrossReferences crossReferences) {
         this.metadataTable = metadataTable;
         this.crossReferences = crossReferences;
         metadataBuilder = new MetadataTable.Metadata.MetadataBuilder();

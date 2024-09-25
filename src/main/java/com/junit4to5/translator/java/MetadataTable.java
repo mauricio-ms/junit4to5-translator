@@ -224,7 +224,7 @@ class MetadataTable {
             .orElseThrow(() -> new IllegalStateException(fullyQualifiedClassName + " not found in metadata table."));
     }
 
-    public Metadata getBase(String fullyQualifiedClassName) {
+    public Optional<Metadata> getBase(String fullyQualifiedClassName) {
         return Optional.ofNullable(table.get(fullyQualifiedClassName))
             .map(metadata -> {
                 PackageResolver packageResolver = new PackageResolver(
@@ -235,8 +235,7 @@ class MetadataTable {
                 return packageResolver.resolveType(metadata.extendsIdentifier)
                     .map(this::get)
                     .orElse(null);
-            })
-            .orElseThrow(() -> new IllegalStateException(fullyQualifiedClassName + " not found in metadata table."));
+            });
     }
 
     public void put(String fullyQualifiedClassName, Metadata metadata) {

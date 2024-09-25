@@ -412,9 +412,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         boolean isBeforeMainClassScope = currentScope.depth() == 1;
         if (isBeforeMainClassScope && ctx.EXTENDS() != null) {
             currentScope = new NestedScope(currentScope);
-            Map<String, Object> instanceVariables = metadataTable.getBase(fullyQualifiedName)
-                .getInstanceVariables();
-            instanceVariables.forEach(currentScope::declare);
+            metadataTable.getBase(fullyQualifiedName)
+                .ifPresent(baseClassMetadata ->
+                    baseClassMetadata.getInstanceVariables().forEach(currentScope::declare));
         }
 
         currentScope = new NestedScope(currentScope, CLASS_SCOPE);

@@ -504,9 +504,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresent(memberDeclaration -> {
                 if (currentScope.hasBool("$main") && memberDeclaration.methodDeclaration() != null) {
                     boolean hasCrossReference = crossReferences.hasCrossReference(
-                        "%s.%s".formatted(
-                            fullyQualifiedName,
-                            memberDeclaration.methodDeclaration().identifier().getText()));
+                        fullyQualifiedName,
+                        memberDeclaration.methodDeclaration().identifier().getText(),
+                        FormalParameters.get(memberDeclaration.methodDeclaration().formalParameters()).size());
                     if (!hasCrossReference) {
                         maybePublicToken(ctx.modifier().stream()
                             .map(JavaParser.ModifierContext::classOrInterfaceModifier)

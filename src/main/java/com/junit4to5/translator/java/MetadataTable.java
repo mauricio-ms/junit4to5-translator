@@ -128,18 +128,9 @@ class MetadataTable {
             .map(metadata -> metadata.streamTestInfoUsageConstructors(identifier))
             .orElseGet(Stream::empty)
             .filter(testInfoUsageConstructor -> {
-                List<Parameter> parameters = getParameters(testInfoUsageConstructor.formalParameters());
-                int callArgumentsSize = Optional.ofNullable(arguments)
-                    .map(JavaParser.ArgumentsContext::expressionList)
-                    .map(exprList -> exprList.expression().size())
-                    .orElse(0);
-
-                // Just checking size, the correct would be checking the types also to consider overload methods
-                int parametersSize = parameters.size();
-                return parametersSize == callArgumentsSize ||
-                       parametersSize > 0 &&
-                       parametersSize < callArgumentsSize &&
-                       parameters.get(parametersSize - 1).varargs();
+                FormalParameters formalParameters = FormalParameters.get(testInfoUsageConstructor.formalParameters());
+                int callArgumentsSize = ArgumentsResolver.resolveSize(arguments);
+                return formalParameters.isCallCompatible(callArgumentsSize);
             })
             .findFirst();
     }
@@ -152,18 +143,9 @@ class MetadataTable {
         return streamTestInfoUsageMethod(fullyQualifiedClassName)
             .filter(m -> m.identifier().getText().equals(identifier))
             .filter(testInfoUsageMethod -> {
-                List<Parameter> parameters = getParameters(testInfoUsageMethod.formalParameters());
-                int callArgumentsSize = Optional.ofNullable(arguments)
-                    .map(JavaParser.ArgumentsContext::expressionList)
-                    .map(exprList -> exprList.expression().size())
-                    .orElse(0);
-
-                // Just checking size, the correct would be checking the types also to consider overload methods
-                int parametersSize = parameters.size();
-                return parametersSize == callArgumentsSize ||
-                       parametersSize > 0 &&
-                       parametersSize < callArgumentsSize &&
-                       parameters.get(parametersSize - 1).varargs();
+                FormalParameters formalParameters = FormalParameters.get(testInfoUsageMethod.formalParameters());
+                int callArgumentsSize = ArgumentsResolver.resolveSize(arguments);
+                return formalParameters.isCallCompatible(callArgumentsSize);
             })
             .findFirst();
     }
@@ -190,29 +172,6 @@ class MetadataTable {
         }
 
         return stream;
-    }
-
-    private List<Parameter> getParameters(JavaParser.FormalParametersContext ctx) {
-        if (ctx == null || ctx.formalParameterList() == null) {
-            return List.of();
-        }
-
-        var formalParameters = ctx.formalParameterList();
-        Stream<Parameter> formatParamtersStream = formalParameters.formalParameter().stream()
-            .map(p -> new Parameter(TypeResolver.resolve(p.typeType()), p.variableDeclaratorId().getText()));
-        Stream<Parameter> lastFormalParameterStream = Stream.of(formalParameters.lastFormalParameter())
-            .filter(Objects::nonNull)
-            .map(p -> new Parameter(
-                TypeResolver.resolve(p.typeType()),
-                p.variableDeclaratorId().getText(),
-                p.ELLIPSIS() != null));
-        return Stream.concat(formatParamtersStream, lastFormalParameterStream).toList();
-    }
-
-    private record Parameter(String type, String identifier, boolean varargs) {
-        private Parameter(String type, String identifier) {
-            this(type, identifier, false);
-        }
     }
 
     public Optional<Metadata> maybeGet(String fullyQualifiedClassName) {

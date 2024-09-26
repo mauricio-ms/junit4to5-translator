@@ -56,6 +56,15 @@ class JavaPublicClassesFinder extends BaseJUnit4To5Pass {
                                 memberDeclaration.methodDeclaration().identifier().getText())));
                 }
             });
-        return null;
+        return super.visitClassBodyDeclaration(ctx);
+    }
+
+    @Override
+    public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
+        crossReferences.addMethod(
+            fullyQualifiedName,
+            ctx.identifier().getText(),
+            FormalParameters.get(ctx.formalParameters()));
+        return super.visitMethodDeclaration(ctx);
     }
 }

@@ -150,12 +150,19 @@ class JavaMetadataCollector extends BaseJUnit4To5Pass {
     @Override
     public Void visitExpression(JavaParser.ExpressionContext ctx) {
         if (ctx.DOT() != null && ctx.methodCall() != null) {
-            String type = ctx.expression(0).getText();
-            // TODO - needed to track cross references to methods imported via static import
-            // String call = ctx.methodCall().getText();
             getPackageResolver()
-                .resolveType(type)
-                .ifPresent(crossReferences::incrementType);
+                .resolveType(ctx.expression(0).getText())
+                .ifPresent(type -> {
+                    crossReferences.incrementType(type);
+                    Optional.ofNullable(ctx.methodCall().identifier())
+                        .map(RuleContext::getText)
+                        .ifPresent(methodCall -> {
+                            int argumentsSize = ArgumentsResolver.resolveSize(ctx.methodCall().arguments());
+                            if (crossReferences.hasMethod(type, methodCall, argumentsSize)) {
+                                crossReferences.incrementMethod(type, methodCall, argumentsSize);
+                            }
+                        });
+                });
         }
         return super.visitExpression(ctx);
     }

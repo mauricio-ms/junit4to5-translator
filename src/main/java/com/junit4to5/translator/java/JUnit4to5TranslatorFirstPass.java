@@ -58,6 +58,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isTestCaseClass;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
+    private boolean hasAssumeTrueTranslation;
     private boolean testNameRuleExpressionProcessed;
     private String expectedTestAnnotationClause;
 
@@ -201,7 +202,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 case "org.junit.Assert.assertFalse" -> "org.junit.jupiter.api.Assertions.assertFalse";
                 case "org.junit.Assert.assertThrows" -> "org.junit.jupiter.api.Assertions.assertThrows";
                 case "org.junit.Assert.fail" -> "org.junit.jupiter.api.Assertions.fail";
-                case "org.junit.Assume.assumeTrue" -> "org.junit.jupiter.api.Assumptions.assumeTrue";
+                case "org.junit.Assume.assumeTrue" -> {
+                    hasAssumeTrueTranslation = true;
+                    yield "org.junit.jupiter.api.Assumptions.assumeTrue";
+                }
                 case "org.junit.internal.matchers.ThrowableMessageMatcher.hasMessage" -> importName;
                 default -> throw new IllegalStateException("Unexpected JUnit static import: " + importName);
             });
@@ -758,6 +762,20 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             Optional.ofNullable(ctx.identifier())
                 .filter(id -> "assertEquals".equals(id.getText()))
                 .ifPresent(__ -> staticAddedImports.add("org.junit.jupiter.api.Assertions.assertEquals"));
+        }
+        if (hasAssumeTrueTranslation) {
+            Optional.ofNullable(ctx.identifier())
+                .filter(id -> "assumeTrue".equals(id.getText()))
+                .ifPresent(__ -> {
+                    var arguments = ctx.arguments().expressionList().expression();
+                    if (arguments.size() != 2) {
+                        throw new IllegalStateException("Unexpected arguments for assumeTrue: " + ctx.getText());
+                    }
+                    var message = arguments.get(0);
+                    var assumption = arguments.get(1);
+                    rewriter.replace(message.start, message.stop, assumption.getText());
+                    rewriter.replace(assumption.start, assumption.stop, message.getText());
+                });
         }
         return super.visitMethodCall(ctx);
     }

@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 class CrossReferences {
 
@@ -87,6 +88,13 @@ class CrossReferences {
             .findFirst()
             .orElseThrow(() -> new IllegalStateException("No compatible method cross reference: " + methodKey));
         method.incrementUsage();
+    }
+
+    public void incrementMethods(String type, String methodIdentifier) {
+        String methodKey = buildMethodKey(type, methodIdentifier);
+        if (methods.containsKey(methodKey)) {
+            methods.get(methodKey).forEach(Method::incrementUsage);
+        }
     }
 
     private static String buildMethodKey(String type, String methodIdentifier) {

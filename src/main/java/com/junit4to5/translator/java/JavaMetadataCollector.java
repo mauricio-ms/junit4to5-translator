@@ -50,18 +50,23 @@ class JavaMetadataCollector extends BaseJUnit4To5Pass {
         if (ctx.MUL() != null) {
             importDeclaration += ".*";
         } else {
-            // for import static cases
-            String possibleTypeName = importDeclaration.substring(0, importDeclaration.lastIndexOf('.'));
-            incrementCrossReferenceTypeIfPresent(possibleTypeName);
             incrementCrossReferenceTypeIfPresent(importDeclaration);
         }
         metadataBuilder.addImportDeclaration(importDeclaration);
         return super.visitImportDeclaration(ctx);
     }
 
-    private void incrementCrossReferenceTypeIfPresent(String type) {
-        if (crossReferences.hasType(type)) {
-            crossReferences.incrementType(type);
+    private void incrementCrossReferenceTypeIfPresent(String importDeclaration) {
+        if (crossReferences.hasType(importDeclaration)) {
+            crossReferences.incrementType(importDeclaration);
+        } else {
+            // for import static cases
+            int lastDotIndexOf = importDeclaration.lastIndexOf('.');
+            String staticImportType = importDeclaration.substring(0, lastDotIndexOf);
+            if (crossReferences.hasType(staticImportType)) {
+                crossReferences.incrementType(staticImportType);
+                crossReferences.incrementMethods(staticImportType, importDeclaration.substring(lastDotIndexOf+1));
+            }
         }
     }
 

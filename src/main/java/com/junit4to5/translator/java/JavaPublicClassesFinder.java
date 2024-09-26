@@ -50,21 +50,12 @@ class JavaPublicClassesFinder extends BaseJUnit4To5Pass {
                     maybePublicToken(ctx.modifier().stream()
                         .map(JavaParser.ModifierContext::classOrInterfaceModifier)
                         .filter(Objects::nonNull))
-                        .ifPresent(__ -> crossReferences.addType(
-                            "%s.%s".formatted(
-                                fullyQualifiedName,
-                                memberDeclaration.methodDeclaration().identifier().getText())));
+                        .ifPresent(__ -> crossReferences.addMethod(
+                            fullyQualifiedName,
+                            memberDeclaration.methodDeclaration().identifier().getText(),
+                            FormalParameters.get(memberDeclaration.methodDeclaration().formalParameters())));
                 }
             });
-        return super.visitClassBodyDeclaration(ctx);
-    }
-
-    @Override
-    public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
-        crossReferences.addMethod(
-            fullyQualifiedName,
-            ctx.identifier().getText(),
-            FormalParameters.get(ctx.formalParameters()));
-        return super.visitMethodDeclaration(ctx);
+        return null;
     }
 }

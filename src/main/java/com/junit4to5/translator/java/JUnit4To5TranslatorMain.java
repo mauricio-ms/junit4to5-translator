@@ -12,6 +12,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Scanner;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -68,7 +69,7 @@ public class JUnit4To5TranslatorMain {
             inputFiles.values().stream()
                 .flatMap(Collection::stream)
                 .toList());
-        for (String inputFile : inputFiles.get(JUNIT_4)) {
+        for (String inputFile : Optional.ofNullable(inputFiles.get(JUNIT_4)).orElseGet(ArrayList::new)) {
             System.out.println(">> " + inputFile);
             translate(crossReferences, metadataTable, inputFile, outputPathFn.apply(inputFile));
         }

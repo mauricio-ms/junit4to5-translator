@@ -21,7 +21,7 @@ import antlr.java.JavaParser;
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     private static final List<String> INSTANCE_ACCESSOR = List.of("super", "this");
 
-    private final TokenStreamRewriter rewriter;
+    private final Rewriter rewriter;
     private final MetadataTable metadataTable;
     private final ParameterAdder parameterAdder;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
@@ -34,7 +34,7 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
 
     JUnit4to5TranslatorSecondPass(
         BufferedTokenStream tokens,
-        TokenStreamRewriter rewriter,
+        Rewriter rewriter,
         MetadataTable metadataTable
     ) {
         this.rewriter = rewriter;
@@ -185,13 +185,5 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         return ctx.arguments().expressionList().expression().stream()
             .map(expressionResolver::visit)
             .toList();
-    }
-
-    public void saveOutput(Path outputPath) throws IOException {
-        Files.writeString(
-            outputPath,
-            rewriter.getText(),
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING);
     }
 }

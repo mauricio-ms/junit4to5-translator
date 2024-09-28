@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -39,9 +40,9 @@ public class JUnit4To5TranslatorMain {
                         inputFile -> "output/" + Path.of(inputFile).subpath(1, 2));
                 }
             } else {
-                CrossReferences crossReferences = new CrossReferences();
-                MetadataTable metadataTable = new MetadataTable(crossReferences);
-                translate(crossReferences, metadataTable, args[0], "output/Test.java");
+                translate(
+                    Map.of(JUNIT_4, List.of(args[0])),
+                    inputFile -> "output/Test.java");
             }
             return;
         }
@@ -106,14 +107,17 @@ public class JUnit4To5TranslatorMain {
         String outputFile
     ) throws IOException {
         var tree = buildSyntaxTree(inputFile);
-        TokenStreamRewriter tokenStreamRewriter = new TokenStreamRewriter(tree.tokens());
+        Rewriter rewriter = new Rewriter(new TokenStreamRewriter(tree.tokens()), new HiddenTokens(tree.tokens()));
         SymbolTable symbolTable = new SymbolTable();
         var firstPass = new JUnit4to5TranslatorFirstPass(
-            tree.tokens(), tokenStreamRewriter, metadataTable, crossReferences, symbolTable);
+            tree.tokens(), rewriter, metadataTable, crossReferences, symbolTable);
         firstPass.visit(tree.ruleContext());
-        var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), tokenStreamRewriter, metadataTable);
+        var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), rewriter, metadataTable);
         secondPass.visit(tree.ruleContext());
-        secondPass.saveOutput(Paths.get(outputFile));
+        var formattingPass = new JUnit4to5TranslatorFormattingPass(rewriter, new HiddenTokens(tree.tokens()));
+        formattingPass.visit(tree.ruleContext());
+        
+        saveOutput(rewriter.getText(), Paths.get(outputFile));
     }
 
     private static SyntaxTree buildSyntaxTree(String inputFile) {
@@ -134,4 +138,12 @@ public class JUnit4To5TranslatorMain {
     }
 
     private record SyntaxTree(RuleContext ruleContext, CommonTokenStream tokens) {}
+
+    private static void saveOutput(String text, Path outputPath) throws IOException {
+        Files.writeString(
+            outputPath,
+            text,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING);
+    }
 }

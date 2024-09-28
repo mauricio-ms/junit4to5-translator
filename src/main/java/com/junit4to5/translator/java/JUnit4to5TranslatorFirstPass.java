@@ -43,7 +43,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "helper.getTestClass()");
 
     private final BufferedTokenStream tokens;
-    private final TokenStreamRewriter rewriter;
+    private final Rewriter rewriter;
     private final MetadataTable metadataTable;
     private final CrossReferences crossReferences;
     private final SymbolTable symbolTable;
@@ -64,7 +64,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     JUnit4to5TranslatorFirstPass(
         BufferedTokenStream tokens,
-        TokenStreamRewriter rewriter,
+        Rewriter rewriter,
         MetadataTable metadataTable,
         CrossReferences crossReferences,
         SymbolTable symbolTable

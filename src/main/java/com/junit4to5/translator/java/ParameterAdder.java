@@ -2,13 +2,12 @@ package com.junit4to5.translator.java;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStreamRewriter;
 
 class ParameterAdder {
-    private final TokenStreamRewriter rewriter;
+    private final Rewriter rewriter;
     private final HiddenTokens hiddenTokens;
 
-    ParameterAdder(TokenStreamRewriter rewriter, BufferedTokenStream tokens) {
+    ParameterAdder(Rewriter rewriter, BufferedTokenStream tokens) {
         this.rewriter = rewriter;
         hiddenTokens = new HiddenTokens(tokens);
     }

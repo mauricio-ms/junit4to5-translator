@@ -773,8 +773,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     }
                     var message = arguments.get(0);
                     var assumption = arguments.get(1);
-                    rewriter.replace(message.start, message.stop, assumption.getText());
-                    rewriter.replace(assumption.start, assumption.stop, message.getText());
+                    rewriter.replace(message.start, message.stop,
+                        hiddenTokens.getText(assumption.getSourceInterval()));
+                    rewriter.replace(assumption.start, assumption.stop,
+                        hiddenTokens.getText(message.getSourceInterval()));
                 });
         }
         return super.visitMethodCall(ctx);

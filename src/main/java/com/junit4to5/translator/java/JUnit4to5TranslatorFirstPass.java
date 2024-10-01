@@ -60,6 +60,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
     private boolean testNameRuleExpressionProcessed;
+    private JavaParser.ImportDeclarationContext lastImportNonRemoved;
+    private boolean lastImportRemoved;
     private String expectedTestAnnotationClause;
 
     JUnit4to5TranslatorFirstPass(
@@ -104,6 +106,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 imports,
                 d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
                 "import static %s;"::formatted));
+
+        if (lastImportRemoved) {
+            rewriter.insertAfter(lastImportNonRemoved.getStop(), "\n");
+        }
 
         return null;
     }
@@ -155,6 +161,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitImportDeclaration(JavaParser.ImportDeclarationContext ctx) {
+        lastImportRemoved = false;
         boolean wildcardImport = ctx.DOT() != null && ctx.MUL() != null;
         String importName = wildcardImport ?
             ctx.qualifiedName().getText() + ".*" :
@@ -163,8 +170,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (importName.startsWith("org.junit") && !importName.startsWith("org.junit.jupiter")) {
             getJUnit5Import(ctx.STATIC(), importName)
                 .ifPresentOrElse(
-                    jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
+                    jUnit5Import -> {
+                        lastImportNonRemoved = ctx;
+                        rewriter.replace(ctx.start, ctx.stop, jUnit5Import);
+                    },
                     () -> {
+                        lastImportRemoved = true;
                         rewriter.delete(ctx.start, ctx.stop);
                         deleteNextIf(ctx.stop, "\n");
                     });
@@ -172,9 +183,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             // TODO - should remove also:
             //  rule if all rules were removed
             //  should add test new import only if there is a non-parameterized test
+            lastImportRemoved = true;
             rewriter.delete(ctx.start, ctx.stop);
             deletePreviousIf(ctx.start, "\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
+        } else {
+            lastImportNonRemoved = ctx;
         }
         return super.visitImportDeclaration(ctx);
     }

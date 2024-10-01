@@ -7,6 +7,7 @@ import java.util.stream.IntStream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.misc.Interval;
 
 import antlr.java.JavaLexer;
 
@@ -57,5 +58,9 @@ class HiddenTokens {
             }
         }
         return Optional.empty();
+    }
+    
+    public String getText(Interval interval) {
+        return tokens.getText(interval);
     }
 }

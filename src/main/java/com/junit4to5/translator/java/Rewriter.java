@@ -2,6 +2,7 @@ package com.junit4to5.translator.java;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.TokenStreamRewriter;
@@ -66,7 +67,8 @@ class Rewriter {
         Region region = new Region(interval.a, interval.b);
         if (rewrittenRegions.stream().anyMatch(region::contains)) {
             int indentation = hiddenTokens.getIndentation(streamRewriter.getTokenStream().get(interval.a));
-            return streamRewriter.getText(interval).length() + indentation > MAX_LINE_LENGTH;
+            return Stream.of(streamRewriter.getText(interval).split("\n"))
+                .anyMatch(t -> t.length() + indentation > MAX_LINE_LENGTH);
         }
         return false;
     }

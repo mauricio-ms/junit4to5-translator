@@ -61,10 +61,6 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitBlockStatement(JavaParser.BlockStatementContext ctx) {
-        if (hiddenTokens.contains(ctx.getStart(), ctx.getStop(), "\n")) {
-            return null;
-        }
-
         if (rewriter.requiresFormatting(ctx.getSourceInterval())) {
             upperIndentationLevel = hiddenTokens.getIndentation(ctx.getStart());
             regionRequiresFormatting = true;

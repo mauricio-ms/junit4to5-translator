@@ -1,9 +1,7 @@
 package com.junit4to5.translator.java;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.IntStream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
@@ -16,14 +14,6 @@ class HiddenTokens {
 
     HiddenTokens(BufferedTokenStream tokens) {
         this.tokens = tokens;
-    }
-
-    public boolean contains(Token start, Token end, String value) {
-        return IntStream.range(start.getTokenIndex(), end.getTokenIndex())
-            .mapToObj(tokenIndex -> tokens.getHiddenTokensToRight(tokenIndex, JavaLexer.HIDDEN))
-            .filter(Objects::nonNull)
-            .flatMap(List::stream)
-            .anyMatch(t -> t.getText().contains(value));
     }
 
     public Integer getIndentation(Token token) {
@@ -59,7 +49,7 @@ class HiddenTokens {
         }
         return Optional.empty();
     }
-    
+
     public String getText(Interval interval) {
         return tokens.getText(interval);
     }

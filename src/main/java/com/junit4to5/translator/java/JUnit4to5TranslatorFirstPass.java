@@ -49,6 +49,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private Scope currentScope;
     private String packageDeclaration;
     private String fullyQualifiedName;
+    private int ruleAnnotationUsage;
     private int testAnnotationUsage;
     private boolean isTestCaseClass;
     private boolean isTranslatingParameterizedTest;
@@ -81,6 +82,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             metadataTable.get(fullyQualifiedName)
                 .addImport("org.junit.jupiter.api.Test");
         }
+        if (ruleAnnotationUsage > 0) {
+            metadataTable.get(fullyQualifiedName)
+                .addImport("org.junit.Rule");
+        }
         return null;
     }
 
@@ -106,9 +111,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                         deleteNextIf(ctx.stop, "\n");
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
-            // TODO - should remove also:
-            //  rule if all rules were removed
-            //  should add test new import only if there is a non-parameterized test
             rewriter.delete(ctx.start, ctx.stop);
             deletePreviousIf(ctx.start, "\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
@@ -157,13 +159,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     case "org.junit.After" -> "org.junit.jupiter.api.AfterEach";
                     case "org.junit.AfterClass" -> "org.junit.jupiter.api.AfterAll";
                     case "org.junit.Ignore" -> "org.junit.jupiter.api.Disabled";
-                    case "org.junit.Rule",
-                         "org.junit.rules.ErrorCollector",
+                    case "org.junit.rules.ErrorCollector",
                          "org.junit.rules.ExpectedException",
                          "org.junit.rules.TestRule",
                          "org.junit.runners.model.Statement",
                          "org.junit.runner.Description" -> importName; // TODO - review
                     case "org.junit.runner.RunWith",
+                         "org.junit.Rule",
                          "org.junit.runners.Parameterized",
                          "org.junit.runners.Parameterized.Parameters",
                          "org.junit.Test",
@@ -217,9 +219,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private Optional<String> maybeAnnotationReplacement(JavaParser.AnnotationContext ctx) {
         String annotationName = ctx.qualifiedName().getText();
-        if ("Test".equals(annotationName)) {
-            testAnnotationUsage++;
+        switch (annotationName) {
+            case "Test" -> testAnnotationUsage++;
+            case "Rule" -> ruleAnnotationUsage++;
         }
+        
         if (isTranslatingParameterizedTest) {
             return switch (annotationName) {
                 case "Test" -> {
@@ -466,6 +470,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 Optional.ofNullable(memberDeclaration.fieldDeclaration())
                     .filter(f -> isTestNameRule(ctx, f))
                     .ifPresent(__ -> {
+                        ruleAnnotationUsage--;
                         rewriter.delete(ctx.start, ctx.stop);
                         deleteNextIf(ctx.stop, "\n");
                     });

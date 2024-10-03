@@ -84,21 +84,26 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
         var prefixOccurrences = importDeclarations.stream()
             .filter(prefixPredicate)
             .toList();
-        var lastOccurrence = prefixOccurrences.isEmpty() ?
-            ctx.importDeclaration(importDeclarations.size() - 1) :
-            prefixOccurrences.get(prefixOccurrences.size() - 1);
+        var firstOccurrence = prefixOccurrences.isEmpty() ?
+            ctx.importDeclaration(0) :
+            prefixOccurrences.get(0);
         String addedImportDeclarations = imports.stream()
             .map(importDeclarationFn)
             .collect(Collectors.joining(System.lineSeparator()));
+        
         StringBuilder insertionSb = new StringBuilder();
         if (prefixOccurrences.isEmpty()) {
             insertionSb.append(System.lineSeparator());
         }
+//        if (hiddenTokens.hasNotNextAs(firstOccurrence.stop, "\n\n")) { TODO - check
+//            insertionSb.append(System.lineSeparator());
+//        }
         insertionSb
             .append(System.lineSeparator())
             .append(addedImportDeclarations)
-            .append(System.lineSeparator()); // TODO - should include this only if this is not the last import
-        rewriter.insertAfter(lastOccurrence.stop, insertionSb.toString());
+            .append(System.lineSeparator());
+        
+        rewriter.insertAfter(firstOccurrence.stop, insertionSb.toString());
     }
 
     @Override

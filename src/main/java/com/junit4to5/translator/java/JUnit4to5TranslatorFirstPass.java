@@ -15,7 +15,6 @@ import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.RuleContext;
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStreamRewriter;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
 import antlr.java.JavaLexer;
@@ -55,13 +54,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private Scope currentScope;
     private String packageDeclaration;
     private String fullyQualifiedName;
+    private int testAnnotationUsage;
     private boolean isTestCaseClass;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
     private boolean testNameRuleExpressionProcessed;
-    private JavaParser.ImportDeclarationContext lastImportNonRemoved;
-    private boolean lastImportRemoved;
     private String expectedTestAnnotationClause;
 
     JUnit4to5TranslatorFirstPass(
@@ -86,6 +84,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
         currentScope = new GlobalScope();
         super.visitCompilationUnit(ctx);
+        if (testAnnotationUsage > 0) {
+            addedImports.add("org.junit.jupiter.api.Test");
+        }
 
         if (metadataTable.streamTestInfoUsageMethod(fullyQualifiedName).findAny().isPresent()) {
             addedImports.add("org.junit.jupiter.api.TestInfo");
@@ -106,10 +107,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 imports,
                 d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
                 "import static %s;"::formatted));
-
-        if (lastImportRemoved) {
-            rewriter.insertAfter(lastImportNonRemoved.getStop(), "\n");
-        }
+        
+        hiddenTokens.maybePreviousAs(ctx.typeDeclaration(0).getStart(), "\n")
+            .ifPresent(beforeType -> rewriter.insertAfter(beforeType, "\n"));
 
         return null;
     }
@@ -161,7 +161,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitImportDeclaration(JavaParser.ImportDeclarationContext ctx) {
-        lastImportRemoved = false;
         boolean wildcardImport = ctx.DOT() != null && ctx.MUL() != null;
         String importName = wildcardImport ?
             ctx.qualifiedName().getText() + ".*" :
@@ -170,12 +169,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (importName.startsWith("org.junit") && !importName.startsWith("org.junit.jupiter")) {
             getJUnit5Import(ctx.STATIC(), importName)
                 .ifPresentOrElse(
-                    jUnit5Import -> {
-                        lastImportNonRemoved = ctx;
-                        rewriter.replace(ctx.start, ctx.stop, jUnit5Import);
-                    },
+                    jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
                     () -> {
-                        lastImportRemoved = true;
                         rewriter.delete(ctx.start, ctx.stop);
                         deleteNextIf(ctx.stop, "\n");
                     });
@@ -183,12 +178,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             // TODO - should remove also:
             //  rule if all rules were removed
             //  should add test new import only if there is a non-parameterized test
-            lastImportRemoved = true;
             rewriter.delete(ctx.start, ctx.stop);
             deletePreviousIf(ctx.start, "\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
-        } else {
-            lastImportNonRemoved = ctx;
         }
         return super.visitImportDeclaration(ctx);
     }
@@ -229,7 +221,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         return Optional.ofNullable(
                 switch (importName) {
                     case "org.junit.Assert" -> "org.junit.jupiter.api.Assertions";
-                    case "org.junit.Test" -> "org.junit.jupiter.api.Test";
                     case "org.junit.Before" -> "org.junit.jupiter.api.BeforeEach";
                     case "org.junit.BeforeClass" -> "org.junit.jupiter.api.BeforeAll";
                     case "org.junit.After" -> "org.junit.jupiter.api.AfterEach";
@@ -247,8 +238,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     }
                     case "org.junit.runner.RunWith",
                          "org.junit.runners.Parameterized",
-                         // TODO - check how to translate this to JUnit5
-                         "org.junit.runners.Parameterized.Parameters" -> null;
+                         "org.junit.runners.Parameterized.Parameters",
+                         "org.junit.Test" -> null;
                     default -> throw new IllegalStateException("Unexpected JUnit import: " + importName);
                 })
             .map("import %s;"::formatted);
@@ -297,9 +288,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private Optional<String> maybeAnnotationReplacement(JavaParser.AnnotationContext ctx) {
         String annotationName = ctx.qualifiedName().getText();
+        if ("Test".equals(annotationName)) {
+            testAnnotationUsage++;
+        }
         if (isTranslatingParameterizedTest) {
             return switch (annotationName) {
-                case "Test" -> Optional.of("@ParameterizedTest");
+                case "Test" -> {
+                    testAnnotationUsage--;
+                    yield Optional.of("@ParameterizedTest");
+                }
                 case "UseDataProvider" -> {
                     String methodSourceAnnotation = generatedMethodSourceAnnotation(ctx);
                     if (isMissingTestAnnotation) {

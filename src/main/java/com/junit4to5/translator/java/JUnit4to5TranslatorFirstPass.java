@@ -112,7 +112,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);
-            deletePreviousIf(ctx.start, "\n");
+            deletePreviousIf(ctx.start, "\n\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
         }
         return super.visitImportDeclaration(ctx);

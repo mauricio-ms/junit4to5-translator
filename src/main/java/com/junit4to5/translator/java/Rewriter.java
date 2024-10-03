@@ -64,11 +64,12 @@ class Rewriter {
     }
     
     public boolean requiresFormatting(Interval interval) {
-        Region region = new Region(interval.a, interval.b);
+        int indentation = hiddenTokens.maybeIndentation(streamRewriter.getTokenStream().get(interval.a))
+            .orElse(0);
+        Region region = new Region(interval.a - indentation, interval.b);
         if (rewrittenRegions.stream().anyMatch(region::contains)) {
-            int indentation = hiddenTokens.getIndentation(streamRewriter.getTokenStream().get(interval.a));
-            return Stream.of(streamRewriter.getText(interval).split("\n"))
-                .anyMatch(t -> t.length() + indentation > MAX_LINE_LENGTH);
+            return Stream.of(streamRewriter.getText(new Interval(region.start(), region.end())).split("\n"))
+                .anyMatch(t -> t.length() > MAX_LINE_LENGTH);
         }
         return false;
     }

@@ -2,6 +2,7 @@ package com.junit4to5.translator.java;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
@@ -48,6 +49,18 @@ class HiddenTokens {
             }
         }
         return Optional.empty();
+    }
+    
+    public String getHiddenTextUntilNewLine(int tokenIndex) {
+        List<Token> hiddenTokensToRight = tokens.getHiddenTokensToRight(
+            tokenIndex, JavaLexer.HIDDEN);
+        if (hiddenTokensToRight != null && !hiddenTokensToRight.isEmpty()) {
+            return hiddenTokensToRight.stream()
+                .takeWhile(hiddenToken -> !hiddenToken.getText().contains("\n"))
+                .map(Token::getText)
+                .collect(Collectors.joining());
+        }
+        return "";
     }
 
     public String getText(Interval interval) {

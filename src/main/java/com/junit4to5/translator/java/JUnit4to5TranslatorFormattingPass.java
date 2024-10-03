@@ -186,10 +186,11 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
                 ctx.COLON().getSymbol(),
                 ":%n%s".formatted(upperIndentation));
             return null;
-        } else if (ctx.DOT() == null) {
-            return super.visitExpression(ctx);
         } else {
-            rewriter.replace(ctx.DOT().getSymbol(), "%n%s.".formatted(buildUpperIndentation()));
+            super.visitExpression(ctx);
+            if (regionRequiresFormatting && ctx.DOT() != null) {
+                rewriter.replace(ctx.DOT().getSymbol(), "%n%s.".formatted(buildUpperIndentation()));
+            }
             return null;
         }
     }
@@ -201,8 +202,12 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         var arguments = ctx.arguments();
+        if (arguments.expressionList() == null) {
+            return null;
+        }
+        int indentationAdded = rewriter.getText(ctx.identifier().getSourceInterval()).split(" ").length - 1;
         String indentation = " ".repeat(hiddenTokens.maybeIndentation(ctx.identifier().getStart())
-                                            .orElse(upperIndentationLevel) + INDENTATION_LEVEL);
+                                            .orElse(upperIndentationLevel) + indentationAdded + INDENTATION_LEVEL);
         Interval argumentsInterval = new Interval(
             arguments.LPAREN().getSymbol().getTokenIndex() + 1,
             arguments.RPAREN().getSymbol().getTokenIndex() - 1);
@@ -213,6 +218,7 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
             arguments.LPAREN().getSymbol(),
             arguments.RPAREN().getSymbol(),
             "(%n%s%s)".formatted(indentation, formattedArguments));
+        regionRequiresFormatting = false;
         return null;
     }
 }

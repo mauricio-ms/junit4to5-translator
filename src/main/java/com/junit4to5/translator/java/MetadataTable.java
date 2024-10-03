@@ -21,6 +21,8 @@ class MetadataTable {
         private final Map<String, Object> instanceVariables;
         private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
         private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
+        private final Set<String> staticAddedImports;
+        private final Set<String> addedImports;
 
         public Metadata(
             String packageDeclaration,
@@ -36,6 +38,8 @@ class MetadataTable {
             this.instanceVariables = instanceVariables;
             this.testInfoUsageConstructors = testInfoUsageConstructors;
             this.testInfoUsageMethods = testInfoUsageMethods;
+            staticAddedImports = new HashSet<>();
+            addedImports = new HashSet<>();
         }
 
         public Map<String, Object> getInstanceVariables() {
@@ -61,6 +65,22 @@ class MetadataTable {
 
         public Stream<JavaParser.MethodDeclarationContext> streamTestInfoUsageMethods() {
             return testInfoUsageMethods.stream();
+        }
+
+        public Set<String> getStaticAddedImports() {
+            return staticAddedImports;
+        }
+
+        public void addStaticImport(String staticImportDeclaration) {
+            staticAddedImports.add(staticImportDeclaration);
+        }
+
+        public Set<String> getAddedImports() {
+            return addedImports;
+        }
+
+        public void addImport(String importDeclaration) {
+            addedImports.add(importDeclaration);
         }
 
         static class MetadataBuilder {

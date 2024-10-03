@@ -1,14 +1,11 @@
 package com.junit4to5.translator.java;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
@@ -48,8 +45,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private final SymbolTable symbolTable;
     private final HiddenTokens hiddenTokens;
     private final ParameterAdder parameterAdder;
-    private final Set<String> staticAddedImports;
-    private final Set<String> addedImports;
 
     private Scope currentScope;
     private String packageDeclaration;
@@ -76,8 +71,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         this.symbolTable = symbolTable;
         hiddenTokens = new HiddenTokens(tokens);
         parameterAdder = new ParameterAdder(rewriter, tokens);
-        staticAddedImports = new HashSet<>();
-        addedImports = new HashSet<>();
     }
 
     @Override
@@ -85,72 +78,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         currentScope = new GlobalScope();
         super.visitCompilationUnit(ctx);
         if (testAnnotationUsage > 0) {
-            addedImports.add("org.junit.jupiter.api.Test");
+            metadataTable.get(fullyQualifiedName)
+                .addImport("org.junit.jupiter.api.Test");
         }
-
-        if (metadataTable.streamTestInfoUsageMethod(fullyQualifiedName).findAny().isPresent()) {
-            addedImports.add("org.junit.jupiter.api.TestInfo");
-        }
-
-        Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(addedImports);
-        importsPerPrefix.forEach((prefix, imports) ->
-            insertImportsDeclarations(
-                ctx,
-                imports,
-                d -> d.qualifiedName().getText().startsWith(prefix),
-                "import %s;"::formatted));
-
-        Map<String, List<String>> staticImportsPerPrefix = buildImportsPerPrefix(staticAddedImports);
-        staticImportsPerPrefix.forEach((prefix, imports) ->
-            insertImportsDeclarations(
-                ctx,
-                imports,
-                d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
-                "import static %s;"::formatted));
-        
-        hiddenTokens.maybePreviousAs(ctx.typeDeclaration(0).getStart(), "\n")
-            .ifPresent(beforeType -> rewriter.insertAfter(beforeType, "\n"));
-
         return null;
-    }
-
-    private Map<String, List<String>> buildImportsPerPrefix(Set<String> imports) {
-        return imports.stream()
-            .collect(Collectors.groupingBy(name -> {
-                String[] parts = name.split("\\.");
-                StringBuilder prefixSb = new StringBuilder();
-                for (int i = 0; i < 2; i++) {
-                    prefixSb.append(parts[i]).append(".");
-                }
-                return prefixSb.toString();
-            }));
-    }
-
-    private void insertImportsDeclarations(
-        JavaParser.CompilationUnitContext ctx,
-        List<String> imports,
-        Predicate<JavaParser.ImportDeclarationContext> prefixPredicate,
-        Function<String, String> importDeclarationFn
-    ) {
-        var importDeclarations = ctx.importDeclaration();
-        var prefixOccurrences = importDeclarations.stream()
-            .filter(prefixPredicate)
-            .toList();
-        var lastOccurrence = prefixOccurrences.isEmpty() ?
-            ctx.importDeclaration(importDeclarations.size() - 1) :
-            prefixOccurrences.get(prefixOccurrences.size() - 1);
-        String addedImportDeclarations = imports.stream()
-            .map(importDeclarationFn)
-            .collect(Collectors.joining(System.lineSeparator()));
-        StringBuilder insertionSb = new StringBuilder();
-        if (prefixOccurrences.isEmpty()) {
-            insertionSb.append(System.lineSeparator());
-        }
-        insertionSb
-            .append(System.lineSeparator())
-            .append(addedImportDeclarations)
-            .append(System.lineSeparator()); // TODO - should include this only if this is not the last import
-        rewriter.insertAfter(lastOccurrence.stop, insertionSb.toString());
     }
 
     @Override
@@ -232,14 +163,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                          "org.junit.rules.TestRule",
                          "org.junit.runners.model.Statement",
                          "org.junit.runner.Description" -> importName; // TODO - review
-                    case "org.junit.rules.TestName" -> {
-                        addedImports.add("org.junit.jupiter.api.TestInfo");
-                        yield null;
-                    }
                     case "org.junit.runner.RunWith",
                          "org.junit.runners.Parameterized",
                          "org.junit.runners.Parameterized.Parameters",
-                         "org.junit.Test" -> null;
+                         "org.junit.Test",
+                         "org.junit.rules.TestName" -> null;
                     default -> throw new IllegalStateException("Unexpected JUnit import: " + importName);
                 })
             .map("import %s;"::formatted);
@@ -250,7 +178,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         maybeExpectedTestAnnotationClause(ctx)
             .ifPresent(expected -> {
                 expectedTestAnnotationClause = expected;
-                staticAddedImports.add("org.junit.jupiter.api.Assertions.assertThrows");
+                metadataTable.get(fullyQualifiedName)
+                    .addStaticImport("org.junit.jupiter.api.Assertions.assertThrows");
                 rewriter.delete(ctx.LPAREN().getSymbol(), ctx.RPAREN().getSymbol());
             });
         maybeAnnotationReplacement(ctx)
@@ -320,13 +249,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 case "DataProviderRunner.class",
                      "Parameterized.class" -> Optional.of("");
                 case "SpringJUnit4ClassRunner.class" -> {
-                    addedImports.add("org.junit.jupiter.api.extension.ExtendWith");
-                    addedImports.add("org.springframework.test.context.junit.jupiter.SpringExtension");
+                    MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+                    metadata.addImport("org.junit.jupiter.api.extension.ExtendWith");
+                    metadata.addImport("org.springframework.test.context.junit.jupiter.SpringExtension");
                     yield Optional.of("@ExtendWith(SpringExtension.class)");
                 }
                 case "MockitoJUnitRunner.class" -> {
-                    addedImports.add("org.junit.jupiter.api.extension.ExtendWith");
-                    addedImports.add("org.mockito.junit.jupiter.MockitoExtension");
+                    MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+                    metadata.addImport("org.junit.jupiter.api.extension.ExtendWith");
+                    metadata.addImport("org.mockito.junit.jupiter.MockitoExtension");
                     yield Optional.of("@ExtendWith(MockitoExtension.class)");
                 }
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
@@ -444,6 +375,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         boolean addTestInfoArgumentToConstructor = currentScope
             .hasBool("addTestInfoArgumentToConstructor");
         if (addTestInfoArgumentToConstructor) {
+            metadataTable.get(fullyQualifiedName)
+                .addImport("org.junit.jupiter.api.TestInfo");
             List<JavaParser.ConstructorDeclarationContext> constructors =
                 (List<JavaParser.ConstructorDeclarationContext>) currentScope.get("constructor");
             for (JavaParser.ConstructorDeclarationContext constructor : constructors) {
@@ -547,8 +480,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (annotations.contains("UseDataProvider")) {
             isTranslatingParameterizedTest = true;
             isMissingTestAnnotation = !annotations.contains("Test");
-            addedImports.add("org.junit.jupiter.params.ParameterizedTest");
-            addedImports.add("org.junit.jupiter.params.provider.MethodSource");
+            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+            metadata.addImport("org.junit.jupiter.params.ParameterizedTest");
+            metadata.addImport("org.junit.jupiter.params.provider.MethodSource");
         }
 
         super.visitClassBodyDeclaration(ctx);
@@ -772,7 +706,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (isTestCaseClass) {
             Optional.ofNullable(ctx.identifier())
                 .filter(id -> "assertEquals".equals(id.getText()))
-                .ifPresent(__ -> staticAddedImports.add("org.junit.jupiter.api.Assertions.assertEquals"));
+                .ifPresent(__ -> metadataTable.get(fullyQualifiedName)
+                    .addStaticImport("org.junit.jupiter.api.Assertions.assertEquals"));
         }
         if (hasAssumeTrueTranslation) {
             Optional.ofNullable(ctx.identifier())

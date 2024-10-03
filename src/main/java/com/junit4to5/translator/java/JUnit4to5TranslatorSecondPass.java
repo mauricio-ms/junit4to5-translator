@@ -1,9 +1,5 @@
 package com.junit4to5.translator.java;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,14 +10,12 @@ import java.util.Set;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.TokenStreamRewriter;
 
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     private static final List<String> INSTANCE_ACCESSOR = List.of("super", "this");
 
-    private final Rewriter rewriter;
     private final MetadataTable metadataTable;
     private final ParameterAdder parameterAdder;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
@@ -37,7 +31,6 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         Rewriter rewriter,
         MetadataTable metadataTable
     ) {
-        this.rewriter = rewriter;
         this.metadataTable = metadataTable;
         parameterAdder = new ParameterAdder(rewriter, tokens);
         testInfoUsageMethods = new HashSet<>();
@@ -59,6 +52,8 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             visitCompilationUnit(ctx);
         } else {
             metadataTable.get(fullyQualifiedName).getTestInfoUsageMethods().forEach(method -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.api.TestInfo");
                 var formalParameters = method.formalParameters();
                 parameterAdder.addAfter(
                     formalParameters.LPAREN().getSymbol(),

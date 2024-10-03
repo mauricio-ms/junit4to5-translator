@@ -1,6 +1,11 @@
 package com.junit4to5.translator.java;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -14,13 +19,102 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
 
     private final Rewriter rewriter;
     private final HiddenTokens hiddenTokens;
+    private final MetadataTable metadataTable;
+    
+    private String packageDeclaration;
+    private String fullyQualifiedName;
     private JavaParser.ModifierContext methodDeclarationStartIndex;
     private int upperIndentationLevel;
     private boolean regionRequiresFormatting;
 
-    JUnit4to5TranslatorFormattingPass(Rewriter rewriter, HiddenTokens hiddenTokens) {
+    JUnit4to5TranslatorFormattingPass(
+        Rewriter rewriter,
+        HiddenTokens hiddenTokens,
+        MetadataTable metadataTable
+    ) {
         this.rewriter = rewriter;
         this.hiddenTokens = hiddenTokens;
+        this.metadataTable = metadataTable;
+    }
+
+    @Override
+    public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
+        super.visitCompilationUnit(ctx);
+        MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+        Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(metadata.getAddedImports());
+        importsPerPrefix.forEach((prefix, imports) ->
+            insertImportsDeclarations(
+                ctx,
+                imports,
+                d -> d.qualifiedName().getText().startsWith(prefix),
+                "import %s;"::formatted));
+
+        Map<String, List<String>> staticImportsPerPrefix = buildImportsPerPrefix(metadata.getStaticAddedImports());
+        staticImportsPerPrefix.forEach((prefix, imports) ->
+            insertImportsDeclarations(
+                ctx,
+                imports,
+                d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
+                "import static %s;"::formatted));
+
+        hiddenTokens.maybePreviousAs(ctx.typeDeclaration(0).getStart(), "\n")
+            .ifPresent(beforeType -> rewriter.insertAfter(beforeType, "\n"));
+        return null;
+    }
+
+    private Map<String, List<String>> buildImportsPerPrefix(Set<String> imports) {
+        return imports.stream()
+            .collect(Collectors.groupingBy(name -> {
+                String[] parts = name.split("\\.");
+                StringBuilder prefixSb = new StringBuilder();
+                for (int i = 0; i < 2; i++) {
+                    prefixSb.append(parts[i]).append(".");
+                }
+                return prefixSb.toString();
+            }));
+    }
+
+    private void insertImportsDeclarations(
+        JavaParser.CompilationUnitContext ctx,
+        List<String> imports,
+        Predicate<JavaParser.ImportDeclarationContext> prefixPredicate,
+        Function<String, String> importDeclarationFn
+    ) {
+        var importDeclarations = ctx.importDeclaration();
+        var prefixOccurrences = importDeclarations.stream()
+            .filter(prefixPredicate)
+            .toList();
+        var lastOccurrence = prefixOccurrences.isEmpty() ?
+            ctx.importDeclaration(importDeclarations.size() - 1) :
+            prefixOccurrences.get(prefixOccurrences.size() - 1);
+        String addedImportDeclarations = imports.stream()
+            .map(importDeclarationFn)
+            .collect(Collectors.joining(System.lineSeparator()));
+        StringBuilder insertionSb = new StringBuilder();
+        if (prefixOccurrences.isEmpty()) {
+            insertionSb.append(System.lineSeparator());
+        }
+        insertionSb
+            .append(System.lineSeparator())
+            .append(addedImportDeclarations)
+            .append(System.lineSeparator()); // TODO - should include this only if this is not the last import
+        rewriter.insertAfter(lastOccurrence.stop, insertionSb.toString());
+    }
+
+    @Override
+    public Void visitPackageDeclaration(JavaParser.PackageDeclarationContext ctx) {
+        packageDeclaration = ctx.qualifiedName().getText();
+        return null;
+    }
+
+    @Override
+    public Void visitTypeDeclaration(JavaParser.TypeDeclarationContext ctx) {
+        var classDeclaration = ctx.classDeclaration();
+        if (classDeclaration != null) {
+            fullyQualifiedName = "%s.%s".formatted(
+                packageDeclaration, classDeclaration.identifier().getText());
+        }
+        return super.visitTypeDeclaration(ctx);
     }
 
     @Override

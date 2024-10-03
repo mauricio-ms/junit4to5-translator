@@ -112,7 +112,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);
-            deletePreviousIf(ctx.start, "\n\n");
             deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
         }
         return super.visitImportDeclaration(ctx);
@@ -827,16 +826,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private void deleteTokenPlusSpace(Token token) {
         rewriter.delete(token);
         deleteNextIf(token, " ");
-    }
-
-    private void deletePreviousIf(Token token, String previousToken) {
-        hiddenTokens.maybePreviousAs(token, previousToken)
-            .ifPresent(hiddenToken -> {
-                String replacement = "\n".equals(previousToken) ?
-                    hiddenToken.getText().substring(1) :
-                    "";
-                rewriter.replace(hiddenToken, replacement);
-            });
     }
 
     private boolean deleteNextIf(

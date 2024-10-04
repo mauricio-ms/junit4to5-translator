@@ -114,8 +114,7 @@ public class JUnit4To5TranslatorMain {
         firstPass.visit(tree.ruleContext());
         var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), rewriter, metadataTable);
         secondPass.visit(tree.ruleContext());
-        var formattingPass = new JUnit4to5TranslatorFormattingPass(
-            rewriter, new HiddenTokens(tree.tokens()), metadataTable);
+        var formattingPass = new JUnit4to5TranslatorFormattingPass(tree.tokens(), rewriter);
         formattingPass.visit(tree.ruleContext());
         
         saveOutput(rewriter.getText(), Paths.get(outputFile));

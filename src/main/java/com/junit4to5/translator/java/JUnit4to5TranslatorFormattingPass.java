@@ -1,15 +1,12 @@
 package com.junit4to5.translator.java;
 
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.misc.Interval;
 
 import antlr.java.JavaParser;
@@ -19,107 +16,61 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
 
     private final Rewriter rewriter;
     private final HiddenTokens hiddenTokens;
-    private final MetadataTable metadataTable;
-    
-    private String packageDeclaration;
-    private String fullyQualifiedName;
+
+    private JavaParser.ImportDeclarationContext firstImport;
+    private JavaParser.ImportDeclarationContext lastImport;
     private JavaParser.ModifierContext methodDeclarationStartIndex;
     private int upperIndentationLevel;
     private boolean regionRequiresFormatting;
 
-    JUnit4to5TranslatorFormattingPass(
-        Rewriter rewriter,
-        HiddenTokens hiddenTokens,
-        MetadataTable metadataTable
-    ) {
+    JUnit4to5TranslatorFormattingPass(BufferedTokenStream tokens, Rewriter rewriter) {
         this.rewriter = rewriter;
-        this.hiddenTokens = hiddenTokens;
-        this.metadataTable = metadataTable;
+        hiddenTokens = new HiddenTokens(tokens);
     }
 
     @Override
     public Void visitCompilationUnit(JavaParser.CompilationUnitContext ctx) {
         super.visitCompilationUnit(ctx);
-        MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
-        Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(metadata.getAddedImports());
-        importsPerPrefix.forEach((prefix, imports) ->
-            insertImportsDeclarations(
-                ctx,
-                imports,
-                d -> d.qualifiedName().getText().startsWith(prefix),
-                "import %s;"::formatted));
 
-        Map<String, List<String>> staticImportsPerPrefix = buildImportsPerPrefix(metadata.getStaticAddedImports());
-        staticImportsPerPrefix.forEach((prefix, imports) ->
-            insertImportsDeclarations(
-                ctx,
-                imports,
-                d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
-                "import static %s;"::formatted));
-
-        hiddenTokens.maybePreviousAs(ctx.typeDeclaration(0).getStart(), "\n")
-            .ifPresent(beforeType -> rewriter.insertAfter(beforeType, "\n"));
-        return null;
-    }
-
-    private Map<String, List<String>> buildImportsPerPrefix(Set<String> imports) {
-        return imports.stream()
-            .collect(Collectors.groupingBy(name -> {
-                String[] parts = name.split("\\.");
-                StringBuilder prefixSb = new StringBuilder();
-                for (int i = 0; i < 2; i++) {
-                    prefixSb.append(parts[i]).append(".");
-                }
-                return prefixSb.toString();
-            }));
-    }
-
-    private void insertImportsDeclarations(
-        JavaParser.CompilationUnitContext ctx,
-        List<String> imports,
-        Predicate<JavaParser.ImportDeclarationContext> prefixPredicate,
-        Function<String, String> importDeclarationFn
-    ) {
-        var importDeclarations = ctx.importDeclaration();
-        var prefixOccurrences = importDeclarations.stream()
-            .filter(prefixPredicate)
-            .toList();
-        var firstOccurrence = prefixOccurrences.isEmpty() ?
-            ctx.importDeclaration(0) :
-            prefixOccurrences.get(0);
-        String addedImportDeclarations = imports.stream()
-            .map(importDeclarationFn)
-            .collect(Collectors.joining(System.lineSeparator()));
-        
-        StringBuilder insertionSb = new StringBuilder();
-        if (prefixOccurrences.isEmpty()) {
-            insertionSb.append(System.lineSeparator());
+        Interval importsInterval = new Interval(
+            firstImport.getSourceInterval().a,
+            Optional.ofNullable(lastImport)
+                .map(i -> i.getSourceInterval().b)
+                .orElseGet(() -> firstImport.getSourceInterval().b) + 1);
+        String importsRegion = rewriter.getText(importsInterval);
+        StringBuilder formattedImportsRegionSb = new StringBuilder();
+        int breakLines = 0;
+        for (String importDeclaration : importsRegion.split("\n")) {
+            boolean isBreakLine = importDeclaration.isEmpty();
+            if (isBreakLine) {
+                breakLines++;
+            } else {
+                breakLines = 0;
+            }
+            if (breakLines < 2) {
+                formattedImportsRegionSb.append(importDeclaration).append('\n');
+            }
         }
-//        if (hiddenTokens.hasNotNextAs(firstOccurrence.stop, "\n\n")) { TODO - check
-//            insertionSb.append(System.lineSeparator());
-//        }
-        insertionSb
-            .append(System.lineSeparator())
-            .append(addedImportDeclarations)
-            .append(System.lineSeparator());
-        
-        rewriter.insertAfter(firstOccurrence.stop, insertionSb.toString());
-    }
-
-    @Override
-    public Void visitPackageDeclaration(JavaParser.PackageDeclarationContext ctx) {
-        packageDeclaration = ctx.qualifiedName().getText();
+        Token endTokenImportsRegion = Optional.ofNullable(lastImport)
+            .map(ParserRuleContext::getStop)
+            .orElseGet(() -> firstImport.getStop());
+        rewriter.replace(
+            firstImport.getStart(),
+            endTokenImportsRegion,
+            formattedImportsRegionSb.toString());
+        hiddenTokens.maybeNextAs(endTokenImportsRegion, "\n\n")
+            .ifPresent(rewriter::delete);
         return null;
     }
 
     @Override
-    public Void visitTypeDeclaration(JavaParser.TypeDeclarationContext ctx) {
-        var classDeclaration = ctx.classDeclaration();
-        if (classDeclaration != null) {
-            fullyQualifiedName = "%s.%s".formatted(
-                packageDeclaration, classDeclaration.identifier().getText());
+    public Void visitImportDeclaration(JavaParser.ImportDeclarationContext ctx) {
+        if (firstImport == null) {
+            firstImport = ctx;
+        } else {
+            lastImport = ctx;
         }
-        return super.visitTypeDeclaration(ctx);
+        return super.visitImportDeclaration(ctx);
     }
 
     @Override
@@ -146,9 +97,9 @@ class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
             String indentation = " ".repeat(
                 hiddenTokens.getIndentation(startDeclaration.getStart()) + INDENTATION_LEVEL);
             String formattedParameters = Stream.of(
-                Optional.of(rewriter.getText(ctx.formalParameters().getSourceInterval()))
-                    .map(s -> s.substring(1, s.length() - 1).split(","))
-                    .get())
+                    Optional.of(rewriter.getText(ctx.formalParameters().getSourceInterval()))
+                        .map(s -> s.substring(1, s.length() - 1).split(","))
+                        .get())
                 .map(String::trim)
                 .collect(Collectors.joining(",%n%s".formatted(indentation)));
             rewriter.replace(ctx.formalParameters().getStart(), ctx.formalParameters().getStop(),

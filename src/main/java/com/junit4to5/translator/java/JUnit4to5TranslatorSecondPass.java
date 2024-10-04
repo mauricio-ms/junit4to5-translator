@@ -7,6 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
 import org.antlr.v4.runtime.Token;
@@ -16,6 +19,8 @@ import antlr.java.JavaParser;
 class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
     private static final List<String> INSTANCE_ACCESSOR = List.of("super", "this");
 
+    private final Rewriter rewriter;
+    private final HiddenTokens hiddenTokens;
     private final MetadataTable metadataTable;
     private final ParameterAdder parameterAdder;
     private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
@@ -31,6 +36,8 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
         Rewriter rewriter,
         MetadataTable metadataTable
     ) {
+        this.rewriter = rewriter;
+        hiddenTokens = new HiddenTokens(tokens);
         this.metadataTable = metadataTable;
         parameterAdder = new ParameterAdder(rewriter, tokens);
         testInfoUsageMethods = new HashSet<>();
@@ -60,9 +67,70 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
                     formalParameters.formalParameterList() == null,
                     "TestInfo testInfo");
             });
+
+            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+            Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(metadata.getAddedImports());
+            importsPerPrefix.forEach((prefix, imports) ->
+                insertImportsDeclarations(
+                    ctx,
+                    imports,
+                    d -> d.qualifiedName().getText().startsWith(prefix),
+                    "import %s;"::formatted));
+
+            Map<String, List<String>> staticImportsPerPrefix = buildImportsPerPrefix(metadata.getStaticAddedImports());
+            staticImportsPerPrefix.forEach((prefix, imports) ->
+                insertImportsDeclarations(
+                    ctx,
+                    imports,
+                    d -> d.STATIC() != null && d.qualifiedName().getText().startsWith(prefix),
+                    "import static %s;"::formatted));
+
+            hiddenTokens.maybePreviousAs(ctx.typeDeclaration(0).getStart(), "\n")
+                .ifPresent(beforeType -> rewriter.insertAfter(beforeType, "\n"));
         }
 
         return null;
+    }
+
+    private Map<String, List<String>> buildImportsPerPrefix(Set<String> imports) {
+        return imports.stream()
+            .collect(Collectors.groupingBy(name -> {
+                String[] parts = name.split("\\.");
+                StringBuilder prefixSb = new StringBuilder();
+                for (int i = 0; i < 2; i++) {
+                    prefixSb.append(parts[i]).append(".");
+                }
+                return prefixSb.toString();
+            }));
+    }
+
+    private void insertImportsDeclarations(
+        JavaParser.CompilationUnitContext ctx,
+        List<String> imports,
+        Predicate<JavaParser.ImportDeclarationContext> prefixPredicate,
+        Function<String, String> importDeclarationFn
+    ) {
+        var importDeclarations = ctx.importDeclaration();
+        var prefixOccurrences = importDeclarations.stream()
+            .filter(prefixPredicate)
+            .toList();
+        var firstOccurrence = prefixOccurrences.isEmpty() ?
+            ctx.importDeclaration(0) :
+            prefixOccurrences.get(0);
+        String addedImportDeclarations = imports.stream()
+            .map(importDeclarationFn)
+            .collect(Collectors.joining(System.lineSeparator()));
+
+        StringBuilder insertionSb = new StringBuilder();
+        if (prefixOccurrences.isEmpty()) {
+            insertionSb.append(System.lineSeparator());
+        }
+        insertionSb
+            .append(System.lineSeparator())
+            .append(addedImportDeclarations)
+            .append(System.lineSeparator());
+
+        rewriter.insertAfter(firstOccurrence.stop, insertionSb.toString());
     }
 
     @Override

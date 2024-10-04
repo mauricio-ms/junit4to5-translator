@@ -52,6 +52,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private int ruleAnnotationUsage;
     private int testAnnotationUsage;
     private boolean isTestCaseClass;
+    private boolean isTranslatingBeforeMethod;
+    private String setupRuleCall;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
@@ -222,7 +224,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             case "Test" -> testAnnotationUsage++;
             case "Rule" -> ruleAnnotationUsage++;
         }
-        
+
         if (isTranslatingParameterizedTest) {
             return switch (annotationName) {
                 case "Test" -> {
@@ -265,7 +267,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 }
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
             };
-            case "Before" -> Optional.of("@BeforeEach");
+            case "Before" -> {
+                isTranslatingBeforeMethod = true;
+                yield Optional.of("@BeforeEach");
+            }
             case "BeforeClass" -> Optional.of("@BeforeAll");
             case "After" -> Optional.of("@AfterEach");
             case "AfterClass" -> Optional.of("@AfterAll");
@@ -405,9 +410,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
             String instanceVariableDeclaration = "private final TestInfo testInfo;";
             maybeStartInstanceVariablesSection(ctx.classBody())
-                .ifPresentOrElse(start -> rewriter.insertBefore(start,
+                .ifPresentOrElse(
+                    start -> rewriter.insertBefore(
+                        start,
                         "%s\n%8s".formatted(instanceVariableDeclaration, "")),
-                    () -> rewriter.insertAfter(ctx.classBody().LBRACE().getSymbol(),
+                    () -> rewriter.insertAfter(
+                        ctx.classBody().LBRACE().getSymbol(),
                         "\n%8s%s".formatted("", instanceVariableDeclaration)));
         }
         currentScope = currentScope.enclosing();
@@ -680,6 +688,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
+        if (isTranslatingBeforeMethod) {
+            metadataTable.get(fullyQualifiedName)
+                .maybeRule("TestDataSetupRule")
+                .ifPresent(testDataSetupRule ->
+                    setupRuleCall = "%s.setup();".formatted(testDataSetupRule));
+            isTranslatingBeforeMethod = false;
+        }
         if (expectedTestAnnotationClause != null) {
             String before = "%s%8sassertThrows(%s, () -> {"
                 .formatted(System.lineSeparator(), "", expectedTestAnnotationClause);
@@ -700,7 +715,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             rewriter.insertBefore(ctx.block().stop, after);
             expectedTestAnnotationClause = null;
         }
-        return super.visitMethodBody(ctx);
+        super.visitMethodBody(ctx);
+        if (setupRuleCall != null) {
+            rewriter.insertAfter(
+                ctx.block().LBRACE().getSymbol(),
+                "%n%8s%s%n".formatted(" ", setupRuleCall));
+        }
+        setupRuleCall = null;
+        return null;
     }
 
     @Override
@@ -760,6 +782,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitStatement(JavaParser.StatementContext ctx) {
+        if (ctx.getText().equals(setupRuleCall)) {
+            // setupRuleCall already exists, doesn't need to be added
+            setupRuleCall = null;
+        }
+        
         boolean shouldCreateNestedScope = Stream.of(ctx.FOR())
             .anyMatch(Objects::nonNull);
         if (shouldCreateNestedScope) {

@@ -19,6 +19,7 @@ class MetadataTable {
         private final String extendsIdentifier;
         private final List<String> importDeclarations;
         private final Map<String, Object> instanceVariables;
+        private final Map<String, String> annotatedInstanceVariables;
         private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
         private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
         private final Set<String> staticAddedImports;
@@ -29,6 +30,7 @@ class MetadataTable {
             String extendsIdentifier,
             List<String> importDeclarations,
             Map<String, Object> instanceVariables,
+            Map<String, String> annotatedInstanceVariables,
             Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors,
             Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods
         ) {
@@ -36,6 +38,7 @@ class MetadataTable {
             this.extendsIdentifier = extendsIdentifier;
             this.importDeclarations = importDeclarations;
             this.instanceVariables = instanceVariables;
+            this.annotatedInstanceVariables = annotatedInstanceVariables;
             this.testInfoUsageConstructors = testInfoUsageConstructors;
             this.testInfoUsageMethods = testInfoUsageMethods;
             staticAddedImports = new HashSet<>();
@@ -44,6 +47,10 @@ class MetadataTable {
 
         public Map<String, Object> getInstanceVariables() {
             return instanceVariables;
+        }
+        
+        public Optional<String> maybeRule(String type) {
+            return Optional.ofNullable(annotatedInstanceVariables.get("RULE:" + type));
         }
 
         public void addTestInfoUsageConstructor(JavaParser.ConstructorDeclarationContext testInfoUsageConstructor) {
@@ -88,10 +95,12 @@ class MetadataTable {
             private String extendsIdentifier;
             private Map<String, Object> instanceVariables;
             private final List<String> importDeclarations;
+            private final Map<String, String> annotatedInstanceVariables;
             private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
 
             public MetadataBuilder() {
                 importDeclarations = new ArrayList<>();
+                annotatedInstanceVariables = new HashMap<>();
                 testInfoUsageMethods = new HashSet<>();
             }
 
@@ -114,6 +123,10 @@ class MetadataTable {
             public void addImportDeclaration(String importDeclaration) {
                 importDeclarations.add(importDeclaration);
             }
+            
+            public void addRuleInstanceVariable(String type, String identifier) {
+                annotatedInstanceVariables.put("RULE:" + type, identifier);
+            }
 
             public void addTestInfoUsageMethod(JavaParser.MethodDeclarationContext testInfoUsageMethod) {
                 testInfoUsageMethods.add(testInfoUsageMethod);
@@ -125,6 +138,7 @@ class MetadataTable {
                     extendsIdentifier,
                     importDeclarations,
                     Optional.ofNullable(instanceVariables).orElseGet(HashMap::new),
+                    annotatedInstanceVariables,
                     new HashSet<>(),
                     testInfoUsageMethods);
             }

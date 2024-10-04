@@ -48,14 +48,17 @@ abstract class BaseJUnit4To5Pass extends JavaParserBaseVisitor<Void> {
         JavaParser.ClassBodyDeclarationContext classBodyDeclaration,
         JavaParser.FieldDeclarationContext fieldDeclaration
     ) {
-        boolean isRule = getAnnotationsStream(classBodyDeclaration)
-            .anyMatch(a -> a.qualifiedName().getText().equals("Rule"));
-        if (isRule) {
+        if (isRule(classBodyDeclaration)) {
             return Optional.ofNullable(fieldDeclaration.typeType().classOrInterfaceType())
                 .filter(t -> t.getText().equals("TestName"))
                 .isPresent();
         }
         return false;
+    }
+
+    boolean isRule(JavaParser.ClassBodyDeclarationContext classBodyDeclaration) {
+        return getAnnotationsStream(classBodyDeclaration)
+            .anyMatch(a -> a.qualifiedName().getText().equals("Rule"));
     }
 
     Stream<JavaParser.AnnotationContext> getAnnotationsStream(JavaParser.ClassBodyDeclarationContext ctx) {

@@ -116,6 +116,16 @@ class JavaMetadataCollector extends BaseJUnit4To5Pass {
     @Override
     public Void visitClassBodyDeclaration(JavaParser.ClassBodyDeclarationContext ctx) {
         declareInstanceVariables(ctx, currentScope);
+        Optional.ofNullable(ctx.memberDeclaration())
+            .map(JavaParser.MemberDeclarationContext::fieldDeclaration)
+            .ifPresent(fieldDeclaration -> {
+                if (isRule(ctx)) {
+                    String ruleType = TypeResolver.resolve(fieldDeclaration.typeType());
+                    fieldDeclaration.variableDeclarators().variableDeclarator()
+                        .forEach(v -> metadataBuilder.addRuleInstanceVariable(
+                            ruleType, v.variableDeclaratorId().getText()));
+                }
+            });
         return super.visitClassBodyDeclaration(ctx);
     }
 

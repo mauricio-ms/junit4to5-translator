@@ -12,7 +12,7 @@ import org.antlr.v4.runtime.misc.Interval;
 import antlr.java.JavaParser;
 
 class JUnit4to5TranslatorFormattingPass extends BaseJUnit4To5Pass {
-    private static final int INDENTATION_LEVEL = 4;
+    static final int INDENTATION_LEVEL = 4;
 
     private final Rewriter rewriter;
     private final HiddenTokens hiddenTokens;

@@ -9,7 +9,7 @@ import org.antlr.v4.runtime.TokenStreamRewriter;
 import org.antlr.v4.runtime.misc.Interval;
 
 class Rewriter {
-    private static final int MAX_LINE_LENGTH = 120;
+    static final int MAX_LINE_LENGTH = 120;
     
     private final TokenStreamRewriter streamRewriter;
     private final HiddenTokens hiddenTokens;

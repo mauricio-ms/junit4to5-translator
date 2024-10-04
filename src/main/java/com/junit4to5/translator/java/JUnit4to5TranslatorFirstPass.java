@@ -298,7 +298,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     private String generatedMethodSourceAnnotation(JavaParser.AnnotationContext ctx) {
-        return "@MethodSource(%s)"
+        String prefix = "@MethodSource(";
+        String methodSource = (prefix + "%s)")
             .formatted(Optional.ofNullable(ctx.elementValue())
                 .map(RuleContext::getText)
                 .orElseGet(() -> {
@@ -338,6 +339,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                             "Unexpected annotation parameters: " + ctx.getText());
                     }
                 }));
+        if (methodSource.length() + JUnit4to5TranslatorFormattingPass.INDENTATION_LEVEL > Rewriter.MAX_LINE_LENGTH) {
+            String[] parts = methodSource.split("#");
+            return "%s#\" +%n%s\"%s".formatted(
+                parts[0],
+                " ".repeat(JUnit4to5TranslatorFormattingPass.INDENTATION_LEVEL + prefix.length()),
+                parts[1]);
+        }
+        return methodSource;
     }
 
     @Override

@@ -52,13 +52,16 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private int ruleAnnotationUsage;
     private int testAnnotationUsage;
     private boolean isTestCaseClass;
+    private boolean hasBeforeMethod;
     private boolean isTranslatingBeforeMethod;
     private String setupRuleCall;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
     private boolean testNameRuleExpressionProcessed;
+    private boolean hasStartedMethodTranslations;
     private String expectedTestAnnotationClause;
+    private JavaParser.FieldDeclarationContext lastInstanceVariableDeclaration;
 
     JUnit4to5TranslatorFirstPass(
         BufferedTokenStream tokens,
@@ -87,6 +90,19 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         if (ruleAnnotationUsage > 0) {
             metadataTable.get(fullyQualifiedName)
                 .addImport("org.junit.Rule");
+        }
+        if (!hasBeforeMethod) {
+            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+            metadata.maybeRule("TestDataSetupRule")
+                .ifPresent(testDataSetupRule -> {
+                    metadata.addImport("org.junit.jupiter.api.BeforeEach");
+                    String beforeEachMethod =
+                        "%n%n%4s@BeforeEach%n".formatted("") +
+                        "%4svoid setUp() {%n".formatted("") +
+                        "%8s%s%n".formatted("", buildTestDataSetupRuleCall(testDataSetupRule)) +
+                        "%4s}".formatted("");
+                    rewriter.insertAfter(lastInstanceVariableDeclaration.getStop(), beforeEachMethod);
+                });
         }
         return null;
     }
@@ -269,6 +285,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             };
             case "Before" -> {
                 isTranslatingBeforeMethod = true;
+                hasBeforeMethod = true;
                 yield Optional.of("@BeforeEach");
             }
             case "BeforeClass" -> Optional.of("@BeforeAll");
@@ -503,6 +520,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     @Override
+    public Void visitFieldDeclaration(JavaParser.FieldDeclarationContext ctx) {
+        if (!hasStartedMethodTranslations && currentScope.depth() == 2) {
+            lastInstanceVariableDeclaration = ctx;
+        }
+        return super.visitFieldDeclaration(ctx);
+    }
+
+    @Override
     public Void visitConstructorDeclaration(JavaParser.ConstructorDeclarationContext ctx) {
         currentScope.declareList("constructor", ctx);
         currentScope = new NestedScope(currentScope);
@@ -666,6 +691,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
         currentScope = new NestedScope(currentScope, METHOD_SCOPE);
+        hasStartedMethodTranslations = true;
         super.visitMethodDeclaration(ctx);
         if (currentScope.hasBool("addTestInfoArgumentToMethod")) {
             metadataTable.get(fullyQualifiedName).addTestInfoUsageMethod(ctx);
@@ -692,7 +718,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             metadataTable.get(fullyQualifiedName)
                 .maybeRule("TestDataSetupRule")
                 .ifPresent(testDataSetupRule ->
-                    setupRuleCall = "%s.setup();".formatted(testDataSetupRule));
+                    setupRuleCall = buildTestDataSetupRuleCall(testDataSetupRule));
             isTranslatingBeforeMethod = false;
         }
         if (expectedTestAnnotationClause != null) {
@@ -723,6 +749,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         setupRuleCall = null;
         return null;
+    }
+
+    private static String buildTestDataSetupRuleCall(String testDataSetupRule) {
+        return "%s.setup();".formatted(testDataSetupRule);
     }
 
     @Override
@@ -786,7 +816,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             // setupRuleCall already exists, doesn't need to be added
             setupRuleCall = null;
         }
-        
+
         boolean shouldCreateNestedScope = Stream.of(ctx.FOR())
             .anyMatch(Objects::nonNull);
         if (shouldCreateNestedScope) {

@@ -1,11 +1,13 @@
 package com.junit4to5.translator.java;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.BufferedTokenStream;
@@ -39,7 +41,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         "helper.getTestClass()");
     private static final String[] SETUP_RULES = {
         "TestDataSetupRule",
-        "BlockbusterApiTestSetupRule"};
+        "BlockbusterApiTestSetupRule",
+        "ScoreboardTestSetupRule"};
 
     private final BufferedTokenStream tokens;
     private final Rewriter rewriter;
@@ -48,6 +51,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private final SymbolTable symbolTable;
     private final HiddenTokens hiddenTokens;
     private final ParameterAdder parameterAdder;
+    private final List<String> setupRuleCalls;
 
     private Scope currentScope;
     private String packageDeclaration;
@@ -58,7 +62,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean hasBeforeMethod;
     private boolean isTranslatingJUnitAnnotatedMethod;
     private boolean isTranslatingBeforeMethod;
-    private String setupRuleCall;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
@@ -82,6 +85,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         this.symbolTable = symbolTable;
         hiddenTokens = new HiddenTokens(tokens);
         parameterAdder = new ParameterAdder(rewriter, tokens);
+        setupRuleCalls = new ArrayList<>();
     }
 
     @Override
@@ -98,16 +102,18 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         if (!hasBeforeMethod) {
             MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
-            metadata.maybeRule(SETUP_RULES)
-                .ifPresent(testDataSetupRule -> {
-                    metadata.addImport("org.junit.jupiter.api.BeforeEach");
-                    String beforeEachMethod =
-                        "%n%n%4s@BeforeEach%n".formatted("") +
-                        "%4svoid setUp() {%n".formatted("") +
-                        "%8s%s%n".formatted("", buildSetupRuleCall(testDataSetupRule)) +
-                        "%4s}".formatted("");
-                    rewriter.insertAfter(lastInstanceVariableDeclaration.getStop(), beforeEachMethod);
-                });
+            String setupRuleCalls = metadata.streamRules(SETUP_RULES)
+                .map(setupRule -> "%8s%s%n".formatted("", buildSetupRuleCall(setupRule)))
+                .collect(Collectors.joining());
+            if (!setupRuleCalls.isEmpty()) {
+                metadata.addImport("org.junit.jupiter.api.BeforeEach");
+                String beforeEachMethod =
+                    "%n%n%4s@BeforeEach%n".formatted("") +
+                    "%4svoid setUp() {%n".formatted("") +
+                    setupRuleCalls +
+                    "%4s}".formatted("");
+                rewriter.insertAfter(lastInstanceVariableDeclaration.getStop(), beforeEachMethod);
+            }
         }
         return null;
     }
@@ -772,11 +778,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
                 String annotationValue = Optional.ofNullable(dataProviderSourceAnnotation.elementValuePairs())
                     .map(elementValue -> rewriter.getText(elementValue.elementValuePair().stream()
-                            .filter(v -> "value".equals(v.identifier().getText()))
-                            .findFirst().orElseThrow(() ->
-                                new IllegalStateException("No value element found on annotation: "
-                                                          + dataProviderSourceAnnotation.getText()))
-                            .getSourceInterval()))
+                        .filter(v -> "value".equals(v.identifier().getText()))
+                        .findFirst().orElseThrow(() ->
+                            new IllegalStateException("No value element found on annotation: "
+                                                      + dataProviderSourceAnnotation.getText()))
+                        .getSourceInterval()))
                     .orElseGet(() -> rewriter.getText(dataProviderSourceAnnotation.elementValue().getSourceInterval()));
                 yield "@CsvSource(%s)".formatted(annotationValue);
             }
@@ -784,7 +790,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 metadataTable.get(fullyQualifiedName)
                     .addImport("org.junit.jupiter.params.provider.EnumSource");
 
-                yield  "@EnumSource(%s)".formatted(
+                yield "@EnumSource(%s)".formatted(
                     rewriter.getText(dataProviderSourceAnnotation.elementValuePairs().getSourceInterval())
                         .replace("value", "names"));
             }
@@ -809,10 +815,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     @Override
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
         if (isTranslatingBeforeMethod) {
-            metadataTable.get(fullyQualifiedName)
-                .maybeRule(SETUP_RULES)
-                .ifPresent(setupRule ->
-                    setupRuleCall = buildSetupRuleCall(setupRule));
+            setupRuleCalls.addAll(
+                metadataTable.get(fullyQualifiedName)
+                    .streamRules(SETUP_RULES)
+                    .map(JUnit4to5TranslatorFirstPass::buildSetupRuleCall)
+                    .toList());
             isTranslatingBeforeMethod = false;
         }
         if (expectedTestAnnotationClause != null) {
@@ -836,15 +843,19 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             expectedTestAnnotationClause = null;
         }
         super.visitMethodBody(ctx);
-        if (setupRuleCall != null) {
+        if (!setupRuleCalls.isEmpty()) {
             String setupRuleCallStmt = hiddenTokens.maybeNextAs(ctx.block().LBRACE().getSymbol(), "\n\n")
-                .map(__ -> "%n%8s%s".formatted(" ", setupRuleCall))
-                .orElseGet(() -> "%n%8s%s%n".formatted(" ", setupRuleCall));
+                .map(__ -> setupRuleCalls.stream().map(setupRuleCall ->
+                        "%n%8s%s".formatted(" ", setupRuleCall))
+                    .collect(Collectors.joining()))
+                .orElseGet(() -> setupRuleCalls.stream().map(setupRuleCall ->
+                        "%n%8s%s%n".formatted(" ", setupRuleCall))
+                    .collect(Collectors.joining()));
             rewriter.insertAfter(
                 ctx.block().LBRACE().getSymbol(),
                 setupRuleCallStmt);
         }
-        setupRuleCall = null;
+        setupRuleCalls.clear();
         return null;
     }
 
@@ -909,10 +920,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitStatement(JavaParser.StatementContext ctx) {
-        if (ctx.getText().equals(setupRuleCall)) {
-            // setupRuleCall already exists, doesn't need to be added
-            setupRuleCall = null;
-        }
+        setupRuleCalls.remove(ctx.getText());
 
         boolean shouldCreateNestedScope = Stream.of(ctx.FOR())
             .anyMatch(Objects::nonNull);

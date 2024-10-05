@@ -332,55 +332,56 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     }
 
     private String generatedMethodSourceAnnotation(JavaParser.AnnotationContext ctx) {
-        String prefix = "@MethodSource(";
-        String methodSource = (prefix + "%s)")
-            .formatted(Optional.ofNullable(ctx.elementValue())
-                .map(RuleContext::getText)
-                .orElseGet(() -> {
-                    var elementValuePairs = ctx.elementValuePairs().elementValuePair();
-                    int elementValuePairsSize = elementValuePairs.size();
-                    if (elementValuePairsSize == 2) {
-                        var value = elementValuePairs.stream()
-                            .filter(e -> e.identifier().getText().equals("value"))
-                            .findFirst()
-                            .orElseThrow(() -> new IllegalStateException(
-                                "No value parameter found in annotation: " + ctx.getText()))
-                            .elementValue()
-                            .getText();
-                        var location = elementValuePairs.stream()
-                            .filter(e -> e.identifier().getText().equals("location"))
-                            .findFirst()
-                            .orElseThrow(() -> new IllegalStateException(
-                                "No location parameter found in annotation: " + ctx.getText()))
-                            .elementValue()
-                            .getText()
-                            .replace(".class", "");
-                        return "\"%s#%s\"".formatted(
-                            symbolTable.getImportFor(location)
-                                // todo - it's needed to check for wildcard imports to make sure it's
-                                //  not imported from some other package
-                                .orElse(location),
-                            value.substring(1, value.length() - 1));
-                    } else if (elementValuePairsSize == 1) {
-                        var elementValuePair = elementValuePairs.get(0);
-                        if (!"value".equals(elementValuePair.identifier().getText())) {
-                            throw new IllegalStateException(
-                                "No value parameter found in annotation: " + ctx.getText());
-                        }
-                        return elementValuePair.elementValue().getText();
-                    } else {
+        String methodSourceParam = Optional.ofNullable(ctx.elementValue())
+            .map(RuleContext::getText)
+            .orElseGet(() -> {
+                var elementValuePairs = ctx.elementValuePairs().elementValuePair();
+                int elementValuePairsSize = elementValuePairs.size();
+                if (elementValuePairsSize == 2) {
+                    var value = elementValuePairs.stream()
+                        .filter(e -> e.identifier().getText().equals("value"))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                            "No value parameter found in annotation: " + ctx.getText()))
+                        .elementValue()
+                        .getText();
+                    var location = elementValuePairs.stream()
+                        .filter(e -> e.identifier().getText().equals("location"))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                            "No location parameter found in annotation: " + ctx.getText()))
+                        .elementValue()
+                        .getText()
+                        .replace(".class", "");
+                    return "\"%s#%s\"".formatted(
+                        symbolTable.getImportFor(location)
+                            // todo - it's needed to check for wildcard imports to make sure it's
+                            //  not imported from some other package
+                            .orElseGet(() -> "%s.%s".formatted(packageDeclaration, location)),
+                        value.substring(1, value.length() - 1));
+                } else if (elementValuePairsSize == 1) {
+                    var elementValuePair = elementValuePairs.get(0);
+                    if (!"value".equals(elementValuePair.identifier().getText())) {
                         throw new IllegalStateException(
-                            "Unexpected annotation parameters: " + ctx.getText());
+                            "No value parameter found in annotation: " + ctx.getText());
                     }
-                }));
-        if (methodSource.length() + JUnit4to5TranslatorFormattingPass.INDENTATION_LEVEL > Rewriter.MAX_LINE_LENGTH) {
-            String[] parts = methodSource.split("#");
-            return "%s#\" +%n%s\"%s".formatted(
+                    return elementValuePair.elementValue().getText();
+                } else {
+                    throw new IllegalStateException(
+                        "Unexpected annotation parameters: " + ctx.getText());
+                }
+            });
+        int length = "@MethodSource(".length() +
+                     methodSourceParam.length() +
+                     JUnit4to5TranslatorFormattingPass.INDENTATION_LEVEL;
+        if (length > Rewriter.MAX_LINE_LENGTH) {
+            String[] parts = methodSourceParam.split("#");
+            return "@MethodSource(%n%8s%s#\" +%n%1$8s\"%s)".formatted(
+                "",
                 parts[0],
-                " ".repeat(JUnit4to5TranslatorFormattingPass.INDENTATION_LEVEL + prefix.length()),
                 parts[1]);
         }
-        return methodSource;
+        return "@MethodSource(%s)".formatted(methodSourceParam);
     }
 
     @Override

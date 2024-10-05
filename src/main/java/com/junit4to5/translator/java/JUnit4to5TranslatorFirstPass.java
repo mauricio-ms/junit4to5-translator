@@ -65,6 +65,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean testNameRuleExpressionProcessed;
     private boolean hasStartedMethodTranslations;
     private String expectedTestAnnotationClause;
+    private JavaParser.AnnotationContext dataProviderSourceAnnotation;
     private JavaParser.FieldDeclarationContext lastInstanceVariableDeclaration;
 
     JUnit4to5TranslatorFirstPass(
@@ -256,6 +257,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 }
                 case "UseDataProvider" -> {
                     isTranslatingJUnitAnnotatedMethod = true;
+                    metadataTable.get(fullyQualifiedName)
+                        .addImport("org.junit.jupiter.params.provider.MethodSource");
                     String methodSourceAnnotation = generatedMethodSourceAnnotation(ctx);
                     if (isMissingTestAnnotation) {
                         yield Optional.of(
@@ -263,6 +266,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                                 .formatted(System.lineSeparator(), "", methodSourceAnnotation));
                     }
                     yield Optional.of(methodSourceAnnotation);
+                }
+                case "DataProvider" -> {
+                    dataProviderSourceAnnotation = ctx;
+                    yield Optional.empty();
                 }
                 default -> maybeAnnotationReplacementDefault(ctx);
             };
@@ -537,12 +544,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .map(JavaParser.AnnotationContext::qualifiedName)
             .map(RuleContext::getText)
             .toList();
-        if (annotations.contains("UseDataProvider")) {
+        if (annotations.contains("UseDataProvider") ||
+            annotations.contains("Test") && annotations.contains("DataProvider")) {
             isTranslatingParameterizedTest = true;
             isMissingTestAnnotation = !annotations.contains("Test");
-            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
-            metadata.addImport("org.junit.jupiter.params.ParameterizedTest");
-            metadata.addImport("org.junit.jupiter.params.provider.MethodSource");
+            metadataTable.get(fullyQualifiedName)
+                .addImport("org.junit.jupiter.params.ParameterizedTest");
         }
 
         super.visitClassBodyDeclaration(ctx);
@@ -723,6 +730,12 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitMethodDeclaration(JavaParser.MethodDeclarationContext ctx) {
         currentScope = new NestedScope(currentScope, METHOD_SCOPE);
         hasStartedMethodTranslations = true;
+        if (dataProviderSourceAnnotation != null) {
+            var formalParameters = FormalParameters.get(ctx.formalParameters());
+            rewriter.replace(dataProviderSourceAnnotation.getStart(), dataProviderSourceAnnotation.getStop(),
+                generateParametersSourceAnnotationFor(formalParameters.wideType()));
+            dataProviderSourceAnnotation = null;
+        }
         super.visitMethodDeclaration(ctx);
         if (currentScope.hasBool("addTestInfoArgumentToMethod")) {
             metadataTable.get(fullyQualifiedName).addTestInfoUsageMethod(ctx);
@@ -733,6 +746,52 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             isTranslatingJUnitAnnotatedMethod = false;
         }
         return null;
+    }
+
+    private String generateParametersSourceAnnotationFor(String type) {
+        return switch (type) {
+            case "boolean", "Boolean" -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.params.provider.ValueSource");
+                yield "@ValueSource(%s)".formatted(
+                    rewriter.getText(dataProviderSourceAnnotation.elementValuePairs().getSourceInterval())
+                        .replace("value", "booleans")
+                        .replace("\"", "")
+                        .toLowerCase());
+            }
+            case "String" -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.params.provider.ValueSource");
+                yield "@ValueSource(%s)".formatted(
+                    rewriter.getText(dataProviderSourceAnnotation.elementValuePairs().getSourceInterval())
+                        .replace("value", "strings"));
+            }
+            case "Strings" -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.params.provider.CsvSource");
+
+                String annotationValue = Optional.ofNullable(dataProviderSourceAnnotation.elementValuePairs())
+                    .map(elementValue -> rewriter.getText(elementValue.elementValuePair().stream()
+                            .filter(v -> "value".equals(v.identifier().getText()))
+                            .findFirst().orElseThrow(() ->
+                                new IllegalStateException("No value element found on annotation: "
+                                                          + dataProviderSourceAnnotation.getText()))
+                            .getSourceInterval()))
+                    .orElseGet(() -> rewriter.getText(dataProviderSourceAnnotation.elementValue().getSourceInterval()));
+                yield "@CsvSource(%s)".formatted(annotationValue);
+            }
+            default -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.params.provider.EnumSource");
+
+                yield  "@EnumSource(%s)".formatted(
+                    rewriter.getText(dataProviderSourceAnnotation.elementValuePairs().getSourceInterval())
+                        .replace("value", "names"));
+            }
+            // TODO - the correct is to derive the type before using in the switch via the metadata table
+            //  so AEnum will be enum and the we can have an enum case
+            //  default -> throw new IllegalStateException("Unexpected type for parameters source generation: " + type)
+        };
     }
 
     @Override

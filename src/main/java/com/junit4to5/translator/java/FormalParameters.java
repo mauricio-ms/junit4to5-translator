@@ -36,6 +36,17 @@ class FormalParameters {
     private FormalParameters(List<Parameter> parameters) {
         this.parameters = parameters;
     }
+    
+    public String wideType() {
+        List<Parameter> nonJUnitParameters = parameters.stream()
+            .filter(p -> !p.type().equals("TestInfo"))
+            .toList();
+
+        if (nonJUnitParameters.size() > 1) {
+            return "Strings";
+        }
+        return nonJUnitParameters.get(0).type();
+    }
 
     // Just checking size, the correct would be checking the types also to consider overload methods
     public boolean isCallCompatible(int callArgumentsSize) {

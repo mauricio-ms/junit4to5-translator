@@ -51,8 +51,11 @@ class MetadataTable {
             return instanceVariables;
         }
         
-        public Optional<String> maybeRule(String type) {
-            return Optional.ofNullable(annotatedInstanceVariables.get("RULE:" + type));
+        public Optional<String> maybeRule(String... types) {
+            return Stream.of(types)
+                .map(type -> annotatedInstanceVariables.get("RULE:" + type))
+                .filter(Objects::nonNull)
+                .findFirst();
         }
 
         public void addTestInfoUsageConstructor(JavaParser.ConstructorDeclarationContext testInfoUsageConstructor) {

@@ -37,6 +37,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         // TODO - hardcoded expressions known by return Class type
         //  correct would be to collect metadata of all classes before translation
         "helper.getTestClass()");
+    private static final String[] SETUP_RULES = {
+        "TestDataSetupRule",
+        "BlockbusterApiTestSetupRule"};
 
     private final BufferedTokenStream tokens;
     private final Rewriter rewriter;
@@ -94,13 +97,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         if (!hasBeforeMethod) {
             MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
-            metadata.maybeRule("TestDataSetupRule")
+            metadata.maybeRule(SETUP_RULES)
                 .ifPresent(testDataSetupRule -> {
                     metadata.addImport("org.junit.jupiter.api.BeforeEach");
                     String beforeEachMethod =
                         "%n%n%4s@BeforeEach%n".formatted("") +
                         "%4svoid setUp() {%n".formatted("") +
-                        "%8s%s%n".formatted("", buildTestDataSetupRuleCall(testDataSetupRule)) +
+                        "%8s%s%n".formatted("", buildSetupRuleCall(testDataSetupRule)) +
                         "%4s}".formatted("");
                     rewriter.insertAfter(lastInstanceVariableDeclaration.getStop(), beforeEachMethod);
                 });
@@ -748,9 +751,9 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
         if (isTranslatingBeforeMethod) {
             metadataTable.get(fullyQualifiedName)
-                .maybeRule("TestDataSetupRule")
-                .ifPresent(testDataSetupRule ->
-                    setupRuleCall = buildTestDataSetupRuleCall(testDataSetupRule));
+                .maybeRule(SETUP_RULES)
+                .ifPresent(setupRule ->
+                    setupRuleCall = buildSetupRuleCall(setupRule));
             isTranslatingBeforeMethod = false;
         }
         if (expectedTestAnnotationClause != null) {
@@ -775,16 +778,19 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         }
         super.visitMethodBody(ctx);
         if (setupRuleCall != null) {
+            String setupRuleCallStmt = hiddenTokens.maybeNextAs(ctx.block().LBRACE().getSymbol(), "\n\n")
+                .map(__ -> "%n%8s%s".formatted(" ", setupRuleCall))
+                .orElseGet(() -> "%n%8s%s%n".formatted(" ", setupRuleCall));
             rewriter.insertAfter(
                 ctx.block().LBRACE().getSymbol(),
-                "%n%8s%s%n".formatted(" ", setupRuleCall));
+                setupRuleCallStmt);
         }
         setupRuleCall = null;
         return null;
     }
 
-    private static String buildTestDataSetupRuleCall(String testDataSetupRule) {
-        return "%s.setup();".formatted(testDataSetupRule);
+    private static String buildSetupRuleCall(String setupRuleIdentifier) {
+        return "%s.setup();".formatted(setupRuleIdentifier);
     }
 
     @Override

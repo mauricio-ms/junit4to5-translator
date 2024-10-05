@@ -2,6 +2,7 @@ package com.junit4to5.translator.java;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.antlr.v4.runtime.Token;
@@ -53,6 +54,26 @@ class Rewriter {
 
     public void delete(Token indexT) {
         streamRewriter.delete(indexT);
+    }
+
+    public boolean deleteNextIf(
+        Token token,
+        String nextToken
+    ) {
+        return deleteNextIf(token, nextToken, __ -> "");
+    }
+
+    public boolean deleteNextIf(
+        Token token,
+        String nextToken,
+        Function<String, String> replacementFn
+    ) {
+        return hiddenTokens.maybeNextAs(token, nextToken)
+            .map(hiddenToken -> {
+                replace(hiddenToken, replacementFn.apply(hiddenToken.getText()));
+                return true;
+            })
+            .orElse(false);
     }
 
     public String getText(Interval interval) {

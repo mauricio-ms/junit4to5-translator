@@ -28,6 +28,7 @@ import antlr.java.JavaParser;
 
 public class JUnit4To5TranslatorMain {
     private static final String JUNIT_4 = "JUNIT4";
+    private static final String HELPER = "HELPER";
     private static final Map<String, SyntaxTree> SYNTAX_TREE_CACHE = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
@@ -70,9 +71,13 @@ public class JUnit4To5TranslatorMain {
             inputFiles.values().stream()
                 .flatMap(Collection::stream)
                 .toList());
+        for (String inputFile : Optional.ofNullable(inputFiles.get(HELPER)).orElseGet(ArrayList::new)) {
+            System.out.println(">> " + inputFile);
+            translateHelper(inputFile, outputPathFn.apply(inputFile));
+        }
         for (String inputFile : Optional.ofNullable(inputFiles.get(JUNIT_4)).orElseGet(ArrayList::new)) {
             System.out.println(">> " + inputFile);
-            translate(crossReferences, metadataTable, inputFile, outputPathFn.apply(inputFile));
+            translateJUnit4(crossReferences, metadataTable, inputFile, outputPathFn.apply(inputFile));
         }
     }
 
@@ -100,7 +105,18 @@ public class JUnit4To5TranslatorMain {
         }
     }
 
-    private static void translate(
+    private static void translateHelper(
+        String inputFile,
+        String outputFile
+    ) throws IOException {
+        var tree = buildSyntaxTree(inputFile);
+        Rewriter rewriter = new Rewriter(new TokenStreamRewriter(tree.tokens()), new HiddenTokens(tree.tokens()));
+        new HelperTranslator(rewriter).visit(tree.ruleContext());
+
+        saveOutput(rewriter.getText(), Paths.get(outputFile));
+    }
+
+    private static void translateJUnit4(
         CrossReferences crossReferences,
         MetadataTable metadataTable,
         String inputFile,
@@ -109,14 +125,13 @@ public class JUnit4To5TranslatorMain {
         var tree = buildSyntaxTree(inputFile);
         Rewriter rewriter = new Rewriter(new TokenStreamRewriter(tree.tokens()), new HiddenTokens(tree.tokens()));
         SymbolTable symbolTable = new SymbolTable();
-        var firstPass = new JUnit4to5TranslatorFirstPass(
-            tree.tokens(), rewriter, metadataTable, crossReferences, symbolTable);
-        firstPass.visit(tree.ruleContext());
-        var secondPass = new JUnit4to5TranslatorSecondPass(tree.tokens(), rewriter, metadataTable);
-        secondPass.visit(tree.ruleContext());
-        var formattingPass = new JUnit4to5TranslatorFormattingPass(tree.tokens(), rewriter);
-        formattingPass.visit(tree.ruleContext());
-        
+        new JUnit4to5TranslatorFirstPass(tree.tokens(), rewriter, metadataTable, crossReferences, symbolTable)
+            .visit(tree.ruleContext());
+        new JUnit4to5TranslatorSecondPass(tree.tokens(), rewriter, metadataTable)
+            .visit(tree.ruleContext());
+        new JUnit4to5TranslatorFormattingPass(tree.tokens(), rewriter)
+            .visit(tree.ruleContext());
+
         saveOutput(rewriter.getText(), Paths.get(outputFile));
     }
 

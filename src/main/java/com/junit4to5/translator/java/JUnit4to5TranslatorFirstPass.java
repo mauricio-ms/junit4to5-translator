@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -137,11 +136,11 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     jUnit5Import -> rewriter.replace(ctx.start, ctx.stop, jUnit5Import),
                     () -> {
                         rewriter.delete(ctx.start, ctx.stop);
-                        deleteNextIf(ctx.stop, "\n");
+                        rewriter.deleteNextIf(ctx.stop, "\n");
                     });
         } else if (IMPORTS_FOR_REMOVAL.contains(importName)) {
             rewriter.delete(ctx.start, ctx.stop);
-            deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
+            rewriter.deleteNextIf(ctx.stop, "\n", hiddenToken -> hiddenToken.substring(1));
         }
         return super.visitImportDeclaration(ctx);
     }
@@ -216,7 +215,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresent(a -> {
                 rewriter.replace(ctx.start, ctx.stop, a);
                 if (a.isBlank()) {
-                    deleteNextIf(ctx.stop, "\n");
+                    rewriter.deleteNextIf(ctx.stop, "\n");
                 }
             });
         return super.visitAnnotation(ctx);
@@ -438,7 +437,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             .ifPresent(testCase -> {
                 isTestCaseClass = true;
                 rewriter.replace(ctx.EXTENDS().getSymbol(), testCase.stop, "");
-                deleteNextIf(testCase.stop, " ");
+                rewriter.deleteNextIf(testCase.stop, " ");
             });
         super.visitClassDeclaration(ctx);
         boolean addTestInfoArgumentToConstructor = currentScope
@@ -541,7 +540,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     .ifPresent(__ -> {
                         ruleAnnotationUsage--;
                         rewriter.delete(ctx.start, ctx.stop);
-                        deleteNextIf(ctx.stop, "\n");
+                        rewriter.deleteNextIf(ctx.stop, "\n");
                     });
 
                 declareInstanceVariables(ctx, currentScope);
@@ -722,8 +721,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         var comma = expressionList.COMMA(index).getSymbol();
         rewriter.replace(argument.start, argument.stop, "");
         rewriter.delete(comma);
-        if (!deleteNextIf(comma, " ")) {
-            deleteNextIf(comma, "\n");
+        if (!rewriter.deleteNextIf(comma, " ")) {
+            rewriter.deleteNextIf(comma, "\n");
         }
     }
 
@@ -997,26 +996,6 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     private void deleteTokenPlusSpace(Token token) {
         rewriter.delete(token);
-        deleteNextIf(token, " ");
-    }
-
-    private boolean deleteNextIf(
-        Token token,
-        String nextToken
-    ) {
-        return deleteNextIf(token, nextToken, __ -> "");
-    }
-
-    private boolean deleteNextIf(
-        Token token,
-        String nextToken,
-        Function<String, String> replacementFn
-    ) {
-        return hiddenTokens.maybeNextAs(token, nextToken)
-            .map(hiddenToken -> {
-                rewriter.replace(hiddenToken, replacementFn.apply(hiddenToken.getText()));
-                return true;
-            })
-            .orElse(false);
+        rewriter.deleteNextIf(token, " ");
     }
 }

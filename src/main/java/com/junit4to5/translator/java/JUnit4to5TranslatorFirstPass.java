@@ -765,6 +765,15 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                         .replace("\"", "")
                         .toLowerCase());
             }
+            case "int", "Integer" -> {
+                metadataTable.get(fullyQualifiedName)
+                    .addImport("org.junit.jupiter.params.provider.ValueSource");
+                yield "@ValueSource(%s)".formatted(
+                    rewriter.getText(dataProviderSourceAnnotation.elementValuePairs().getSourceInterval())
+                        .replace("value", "ints")
+                        .replace("\"", "")
+                        .toLowerCase());
+            }
             case "String" -> {
                 metadataTable.get(fullyQualifiedName)
                     .addImport("org.junit.jupiter.params.provider.ValueSource");

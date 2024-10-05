@@ -22,6 +22,7 @@ class MetadataTable {
         private final Map<String, String> annotatedInstanceVariables;
         private final Set<JavaParser.ConstructorDeclarationContext> testInfoUsageConstructors;
         private final Set<JavaParser.MethodDeclarationContext> testInfoUsageMethods;
+        private final Set<JavaParser.MethodDeclarationContext> annotatedJUnitMethods;
         private final Set<String> staticAddedImports;
         private final Set<String> addedImports;
 
@@ -41,6 +42,7 @@ class MetadataTable {
             this.annotatedInstanceVariables = annotatedInstanceVariables;
             this.testInfoUsageConstructors = testInfoUsageConstructors;
             this.testInfoUsageMethods = testInfoUsageMethods;
+            annotatedJUnitMethods = new HashSet<>();
             staticAddedImports = new HashSet<>();
             addedImports = new HashSet<>();
         }
@@ -72,6 +74,14 @@ class MetadataTable {
 
         public Stream<JavaParser.MethodDeclarationContext> streamTestInfoUsageMethods() {
             return testInfoUsageMethods.stream();
+        }
+        
+        public void addAnnotatedJUnitMethod(JavaParser.MethodDeclarationContext method) {
+            annotatedJUnitMethods.add(method);
+        }
+
+        public boolean isAnnotatedJUnitMethod(JavaParser.MethodDeclarationContext method) {
+            return annotatedJUnitMethods.contains(method);
         }
 
         public Set<String> getStaticAddedImports() {

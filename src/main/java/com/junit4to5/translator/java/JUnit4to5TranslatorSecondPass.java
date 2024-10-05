@@ -58,17 +58,23 @@ class JUnit4to5TranslatorSecondPass extends BaseJUnit4To5Pass {
             testInfoUsageMethods.clear();
             visitCompilationUnit(ctx);
         } else {
-            metadataTable.get(fullyQualifiedName).getTestInfoUsageMethods().forEach(method -> {
-                metadataTable.get(fullyQualifiedName)
-                    .addImport("org.junit.jupiter.api.TestInfo");
+            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
+            metadata.getTestInfoUsageMethods().forEach(method -> {
+                metadata.addImport("org.junit.jupiter.api.TestInfo");
                 var formalParameters = method.formalParameters();
-                parameterAdder.addAfter(
-                    formalParameters.LPAREN().getSymbol(),
-                    formalParameters.formalParameterList() == null,
-                    "TestInfo testInfo");
+                if (metadata.isAnnotatedJUnitMethod(method)) {
+                    parameterAdder.addBefore(
+                        formalParameters.RPAREN().getSymbol(),
+                        formalParameters.formalParameterList() == null,
+                        "TestInfo testInfo");
+                } else {
+                    parameterAdder.addAfter(
+                        formalParameters.LPAREN().getSymbol(),
+                        formalParameters.formalParameterList() == null,
+                        "TestInfo testInfo");
+                }
             });
 
-            MetadataTable.Metadata metadata = metadataTable.get(fullyQualifiedName);
             Map<String, List<String>> importsPerPrefix = buildImportsPerPrefix(metadata.getAddedImports());
             importsPerPrefix.forEach((prefix, imports) ->
                 insertImportsDeclarations(

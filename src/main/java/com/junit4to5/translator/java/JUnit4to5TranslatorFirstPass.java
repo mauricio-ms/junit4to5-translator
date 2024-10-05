@@ -53,6 +53,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private int testAnnotationUsage;
     private boolean isTestCaseClass;
     private boolean hasBeforeMethod;
+    private boolean isTranslatingJUnitAnnotatedMethod;
     private boolean isTranslatingBeforeMethod;
     private String setupRuleCall;
     private boolean isTranslatingParameterizedTest;
@@ -237,7 +238,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private Optional<String> maybeAnnotationReplacement(JavaParser.AnnotationContext ctx) {
         String annotationName = ctx.qualifiedName().getText();
         switch (annotationName) {
-            case "Test" -> testAnnotationUsage++;
+            case "Test" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
+                testAnnotationUsage++;
+            }
             case "Rule" -> ruleAnnotationUsage++;
         }
 
@@ -248,6 +252,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                     yield Optional.of("@ParameterizedTest");
                 }
                 case "UseDataProvider" -> {
+                    isTranslatingJUnitAnnotatedMethod = true;
                     String methodSourceAnnotation = generatedMethodSourceAnnotation(ctx);
                     if (isMissingTestAnnotation) {
                         yield Optional.of(
@@ -284,14 +289,27 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 default -> throw new IllegalStateException("Unexpected JUnit RunWith: " + ctx.getText());
             };
             case "Before" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
                 isTranslatingBeforeMethod = true;
                 hasBeforeMethod = true;
                 yield Optional.of("@BeforeEach");
             }
-            case "BeforeClass" -> Optional.of("@BeforeAll");
-            case "After" -> Optional.of("@AfterEach");
-            case "AfterClass" -> Optional.of("@AfterAll");
-            case "Ignore" -> Optional.of("@Disabled");
+            case "BeforeClass" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
+                yield Optional.of("@BeforeAll");
+            }
+            case "After" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
+                yield Optional.of("@AfterEach");
+            }
+            case "AfterClass" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
+                yield Optional.of("@AfterAll");
+            }
+            case "Ignore" -> {
+                isTranslatingJUnitAnnotatedMethod = true;
+                yield Optional.of("@Disabled");
+            }
             case "DataProvider" -> Optional.of("");
             default -> Optional.empty();
         };
@@ -425,7 +443,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 maybeThisCall(constructor)
                     .ifPresentOrElse(thisCall -> {
                         Token lParen = thisCall.arguments().LPAREN().getSymbol();
-                        parameterAdder.addAfter(lParen, thisCall.arguments().expressionList() == null, "testInfo");
+                        parameterAdder.addAfter(
+                            lParen, thisCall.arguments().expressionList() == null, "testInfo");
                     }, () -> {
                         Token lBrace = constructor.block().LBRACE().getSymbol();
                         Token newLine = hiddenTokens.maybeNextAs(lBrace, "\n")
@@ -706,6 +725,10 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             metadataTable.get(fullyQualifiedName).addTestInfoUsageMethod(ctx);
         }
         currentScope = currentScope.enclosing();
+        if (isTranslatingJUnitAnnotatedMethod) {
+            metadataTable.get(fullyQualifiedName).addAnnotatedJUnitMethod(ctx);
+            isTranslatingJUnitAnnotatedMethod = false;
+        }
         return null;
     }
 

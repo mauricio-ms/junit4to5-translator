@@ -879,9 +879,13 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
         Optional.ofNullable(ctx.arguments().expressionList())
             .ifPresent(this::replaceOldTestNameRuleSignature);
         Optional<JavaParser.MethodCallContext> maybeAssertEquals = Optional.of(ctx)
+            .filter(methodCall -> methodCall.identifier() != null)
             .filter(methodCall -> "assertEquals".equals(methodCall.identifier().getText()));
         maybeAssertEquals
-            .filter(ae -> ae.arguments().expressionList().expression().size() == 3)
+            .filter(ae -> {
+                var arguments = ae.arguments().expressionList().expression();
+                return arguments.size() == 3 && arguments.get(0).getText().startsWith("\"");
+            })
             .ifPresent(ae -> {
                 var expressionList = ctx.arguments().expressionList();
                 var arguments = expressionList.expression();

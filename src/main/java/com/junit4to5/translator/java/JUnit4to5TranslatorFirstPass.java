@@ -876,9 +876,23 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     public Void visitMethodCall(JavaParser.MethodCallContext ctx) {
         Optional.ofNullable(ctx.arguments().expressionList())
             .ifPresent(this::replaceOldTestNameRuleSignature);
+        Optional<JavaParser.MethodCallContext> maybeAssertEquals = Optional.of(ctx)
+            .filter(methodCall -> "assertEquals".equals(methodCall.identifier().getText()));
+        maybeAssertEquals
+            .filter(ae -> ae.arguments().expressionList().expression().size() == 3)
+            .ifPresent(ae -> {
+                var expressionList = ctx.arguments().expressionList();
+                var arguments = expressionList.expression();
+                var message = arguments.get(0);
+                var actual = arguments.get(2);
+                Token messageComma = expressionList.COMMA(0).getSymbol();
+                rewriter.delete(message.start, messageComma);
+                rewriter.deleteNextIf(messageComma, " ");
+                rewriter.insertAfter(actual.stop,
+                    ", " + hiddenTokens.getText(message.getSourceInterval()));
+            });
         if (isTestCaseClass) {
-            Optional.ofNullable(ctx.identifier())
-                .filter(id -> "assertEquals".equals(id.getText()))
+            maybeAssertEquals
                 .ifPresent(__ -> metadataTable.get(fullyQualifiedName)
                     .addStaticImport("org.junit.jupiter.api.Assertions.assertEquals"));
         }

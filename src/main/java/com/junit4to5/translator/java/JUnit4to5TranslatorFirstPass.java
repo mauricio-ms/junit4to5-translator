@@ -61,6 +61,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
     private boolean hasBeforeMethod;
     private boolean isTranslatingJUnitAnnotatedMethod;
     private boolean isTranslatingBeforeMethod;
+    private boolean hasAddedSetupRules;
     private boolean isTranslatingParameterizedTest;
     private boolean isMissingTestAnnotation;
     private boolean hasAssumeTrueTranslation;
@@ -823,13 +824,14 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
-        if (isTranslatingBeforeMethod) {
+        if (isTranslatingBeforeMethod && !hasAddedSetupRules) {
             setupRuleCalls.addAll(
                 metadataTable.get(fullyQualifiedName)
                     .streamRules(SETUP_RULES)
                     .map(JUnit4to5TranslatorFirstPass::buildSetupRuleCall)
                     .toList());
             isTranslatingBeforeMethod = false;
+            hasAddedSetupRules = true;
         }
         if (expectedTestAnnotationClause != null) {
             String before = "%s%8sassertThrows(%s, () -> {"

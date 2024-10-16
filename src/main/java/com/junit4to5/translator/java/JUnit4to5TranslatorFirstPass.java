@@ -253,6 +253,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
                 testAnnotationUsage++;
             }
             case "Rule" -> ruleAnnotationUsage++;
+            // Necessary due to manual fixes applied on the source code to simplify isolated cases
+            case "ParameterizedTest" -> isTranslatingJUnitAnnotatedMethod = true;
         }
 
         if (isTranslatingParameterizedTest) {

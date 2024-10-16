@@ -824,7 +824,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
 
     @Override
     public Void visitMethodBody(JavaParser.MethodBodyContext ctx) {
-        if (isTranslatingBeforeMethod && !hasAddedSetupRules) {
+        boolean addSetupRuleCall = isTranslatingBeforeMethod && !hasAddedSetupRules;
+        if (addSetupRuleCall) {
             setupRuleCalls.addAll(
                 metadataTable.get(fullyQualifiedName)
                     .streamRules(SETUP_RULES)
@@ -854,7 +855,7 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             expectedTestAnnotationClause = null;
         }
         super.visitMethodBody(ctx);
-        if (!setupRuleCalls.isEmpty()) {
+        if (addSetupRuleCall && !setupRuleCalls.isEmpty()) {
             String setupRuleCallStmt = hiddenTokens.maybeNextAs(ctx.block().LBRACE().getSymbol(), "\n\n")
                 .map(__ -> setupRuleCalls.stream().map(setupRuleCall ->
                         "%n%8s%s".formatted(" ", setupRuleCall))
@@ -865,8 +866,8 @@ class JUnit4to5TranslatorFirstPass extends BaseJUnit4To5Pass {
             rewriter.insertAfter(
                 ctx.block().LBRACE().getSymbol(),
                 setupRuleCallStmt);
+            setupRuleCalls.clear();
         }
-        setupRuleCalls.clear();
         return null;
     }
 

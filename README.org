@@ -1,0 +1,136 @@
+JUnit4to5 translation powered by ANTLR.
+
+* Running
+
+#+begin_src shell
+  ./junit4to5-translator.sh <path>
+#+end_src
+
+* Imports
+** Replacement
+
+*Non-Static:*
+- ~org.junit.Assert~ -> =org.junit.jupiter.api.Assertions=
+- ~org.junit.Before~ -> =org.junit.jupiter.api.BeforeEach=
+- ~org.junit.BeforeClass~ -> =org.junit.jupiter.api.BeforeAll=
+- ~org.junit.After~ -> =org.junit.jupiter.api.AfterEach=
+- ~org.junit.AfterClass~ -> =org.junit.jupiter.api.AfterAll=
+- ~org.junit.Ignore~ -> =org.junit.jupiter.api.Disabled=
+
+*Static:*
+- ~org.junit.Assert.*~ -> =org.junit.jupiter.api.Assertions.*=
+- ~org.junit.Assert.assertArrayEquals~ -> =org.junit.jupiter.api.Assertions.assertArrayEquals=
+- ~org.junit.Assert.assertEquals~ -> =org.junit.jupiter.api.Assertions.assertEquals=
+- ~org.junit.Assert.assertNotEquals~ -> =org.junit.jupiter.api.Assertions.assertNotEquals=
+- ~org.junit.Assert.assertSame~ -> =org.junit.jupiter.api.Assertions.assertSame=
+- ~org.junit.Assert.assertNull~ -> =org.junit.jupiter.api.Assertions.assertNull=
+- ~org.junit.Assert.assertNotNull~ -> =org.junit.jupiter.api.Assertions.assertNotNull=
+- ~org.junit.Assert.assertTrue~ -> =org.junit.jupiter.api.Assertions.assertTrue=
+- ~org.junit.Assert.assertFalse~ -> =org.junit.jupiter.api.Assertions.assertFalse=
+- ~org.junit.Assert.assertThrows~ -> =org.junit.jupiter.api.Assertions.assertThrows=
+- ~org.junit.Assert.fail~ -> =org.junit.jupiter.api.Assertions.fail=
+- ~org.junit.Assume.assumeTrue~ -> =org.junit.jupiter.api.Assumptions.assumeTrue=
+
+** Removal
+
+- ~org.junit.runner.RunWith~
+- ~org.junit.Rule~
+- ~org.junit.runners.Parameterized~
+- ~org.junit.runners.Parameterized.Parameters~
+- ~org.junit.Test~
+- ~org.junit.rules.TestName~
+
+** Rewriting Import Declarations
+
+Once the imports to be removed and to be added are identified, then an algorithm to detect import groups is applied to maintain a coherence in the replacement.
+
+* Rules
+** Setup
+
+Rules responsible for setup data before test execution, now need to be called explicitly in the before each hook, in case it's absent the hook is created with the setupRule call.
+
+/* I took care to add the call only if the call doesn't exists in the code./
+
+** TestName
+
+This was not an easy one, it involves replacing the instance variable usages by the =TestInfo= argument provided in JUnit5 methods.
+
+*** Rule Instance Variable
+
+First, remove the rule instance variable.
+
+*** Replacement by TestInfo
+
+Next, replace the old rule by the =TestInfo= argument from JUnit5.
+  
+*** Nested Methods
+
+This should work even when this usage comes from nested methods.
+
+/* The nested level can be bigger than one, and it can happens to be in the parent class./
+
+*** Nested Classes
+
+There are also some cases where the rule is used in nested classes.
+
+* Annotations
+** Test Runners
+
+*Replacement:*
+- ~@RunWith(SpringJUnit4ClassRunner.class)~ -> =@ExtendWith(SpringExtension.class)=
+- ~@RunWith(MockitoJUnitRunner.class)~ -> =@ExtendWith(MockitoExtension.class)=
+  
+*Removal:*
+- ~@RunWith(DataProviderRunner.class)~
+- ~@RunWith(Parameterized.class)~
+  
+** JUnit Hooks
+
+- ~@Before~ -> =@BeforeEach=
+- ~@BeforeClass~ -> =@BeforeAll=
+- ~@After~ -> =@AfterEach=
+- ~@AfterClass~ -> =@AfterAll=
+  
+** Ignore
+
+- ~@Ignore~ -> =@Disabled=
+  
+** @Test(expected = ...)
+
+In this case the =expected= argument needs to be removed, and the same exception from the argument needs to be used with an =assertThrows= call inside the method.
+
+** Parameterized Tests
+*** Method Source
+
+This is very simple, it's a matter of removing the =@DataProvider= annotation.
+
+And in the test itself, it's just a matter of replacing the annotations for the test and for the input source.
+
+However, there are some cases a bit more involved, when the =location= argument is provided, in which case the fully qualified name needs to be built.
+
+*** Value Source
+
+It's just a matter of replacing the annotations.
+
+For =booleans= and =ints=, it's needed to remove the quotes as JUnit5 expects the primitive values accordingly with the type.
+
+*** Enum Source
+
+When the input parameter is of an =enum= type, then the =@EnumSource= annotation is used.
+
+* Breaking Changes
+** description argument position
+
+Methods like =assumeTrue= and =assertEquals= have the description argument position changed.
+
+** TestCase base class
+
+There is not a direct replacement for this class. It was needed to remove the =extends= clause and detect any usages of the methods inherited and then to apply the appropriate changes. An example of this is the =assertEquals=, the =TestCase= class brings it, so when it's used it's needed to add the import =org.junit.jupiter.api.Assertions.assertEquals=.
+
+* Public Modifier
+
+The JUnit5 convention is not use the =public= access modifier for the test class, hooks and test methods. However, not always this can be removed, because the tests can have cross-references between them. Metadata is used to detect if that is the case to avoid breaking the code.
+
+* Formatting
+
+Finally, the program applies some formatting to avoid any translation generates lines longer than *120* characters.

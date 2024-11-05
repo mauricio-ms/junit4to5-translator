@@ -1,5 +1,12 @@
 JUnit4to5 translation powered by ANTLR.
 
+* Getting Started
+
+#+begin_src shell
+  ./gradlew build
+  ./compile-grammar-java.sh
+#+end_src
+
 * Running
 
 #+begin_src shell

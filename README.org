@@ -1,44 +1,167 @@
-JUnit4to5 translation powered by ANTLR.
+#+title: JUnit4to5 Translator
+#+subtitle: JUnit4 to JUnit5 translation powered by ANTLR
 
-* Getting Started
+* Overview
+
+JUnit4to5 Translator helps migrate Java tests from JUnit4 to JUnit5 by rewriting imports, annotations, rules, parameterized tests, selected assertions, and formatting-sensitive code paths.
+
+The translator is powered by ANTLR and applies metadata-aware rewrites so references between test classes are preserved where possible.
+
+* Quick Start
+
+Build the project and compile the Java grammar:
 
 #+begin_src shell
-  ./gradlew build
-  ./compile-grammar-java.sh
+./gradlew build
+./compile-grammar-java.sh
 #+end_src
 
-* Running
+Run the translator against a file or project path:
 
 #+begin_src shell
-  ./junit4to5-translator.sh <path>
+./junit4to5-translator.sh <path>
 #+end_src
 
-* Imports
-** Replacement
+* Before And After Examples
 
-*Non-Static:*
-- ~org.junit.Assert~ -> =org.junit.jupiter.api.Assertions=
-- ~org.junit.Before~ -> =org.junit.jupiter.api.BeforeEach=
-- ~org.junit.BeforeClass~ -> =org.junit.jupiter.api.BeforeAll=
-- ~org.junit.After~ -> =org.junit.jupiter.api.AfterEach=
-- ~org.junit.AfterClass~ -> =org.junit.jupiter.api.AfterAll=
-- ~org.junit.Ignore~ -> =org.junit.jupiter.api.Disabled=
+** Basic JUnit4 Test
 
-*Static:*
-- ~org.junit.Assert.*~ -> =org.junit.jupiter.api.Assertions.*=
-- ~org.junit.Assert.assertArrayEquals~ -> =org.junit.jupiter.api.Assertions.assertArrayEquals=
-- ~org.junit.Assert.assertEquals~ -> =org.junit.jupiter.api.Assertions.assertEquals=
-- ~org.junit.Assert.assertNotEquals~ -> =org.junit.jupiter.api.Assertions.assertNotEquals=
-- ~org.junit.Assert.assertSame~ -> =org.junit.jupiter.api.Assertions.assertSame=
-- ~org.junit.Assert.assertNull~ -> =org.junit.jupiter.api.Assertions.assertNull=
-- ~org.junit.Assert.assertNotNull~ -> =org.junit.jupiter.api.Assertions.assertNotNull=
-- ~org.junit.Assert.assertTrue~ -> =org.junit.jupiter.api.Assertions.assertTrue=
-- ~org.junit.Assert.assertFalse~ -> =org.junit.jupiter.api.Assertions.assertFalse=
-- ~org.junit.Assert.assertThrows~ -> =org.junit.jupiter.api.Assertions.assertThrows=
-- ~org.junit.Assert.fail~ -> =org.junit.jupiter.api.Assertions.fail=
-- ~org.junit.Assume.assumeTrue~ -> =org.junit.jupiter.api.Assumptions.assumeTrue=
+Before running the tool:
 
-** Removal
+#+begin_src java
+import static org.junit.Assert.assertEquals;
+import org.junit.Test;
+
+public class CalculatorTest {
+    @Test
+    public void evaluatesExpression() {
+        int sum = calculator.evaluate("1+2+3");
+        assertEquals(6, sum);
+    }
+}
+#+end_src
+
+After running the tool:
+
+#+begin_src java
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+
+class CalculatorTest {
+    @Test
+    void evaluatesExpression() {
+        int sum = calculator.evaluate("1+2+3");
+        assertEquals(6, sum);
+    }
+}
+#+end_src
+
+** TestName Rule
+
+Before running the tool:
+
+#+begin_src java
+import static org.junit.Assert.assertEquals;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TestName;
+
+public class CalculatorTest {
+    @Rule
+    public TestName name = new TestName();
+
+    @Test
+    public void evaluatesExpression() {
+        Calculator calculator = new Calculator(this.name);
+        assertEquals(6, calculator.evaluate("1+2+3"));
+    }
+}
+#+end_src
+
+After running the tool:
+
+#+begin_src java
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+
+class CalculatorTest {
+    @Test
+    void evaluatesExpression(TestInfo testInfo) {
+        Calculator calculator = new Calculator(testInfo);
+        assertEquals(6, calculator.evaluate("1+2+3"));
+    }
+}
+#+end_src
+
+** Expected Exceptions
+
+Before running the tool:
+
+#+begin_src java
+import org.junit.Test;
+
+public class ParserTest {
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsInvalidInput() {
+        parser.parse(null);
+    }
+}
+#+end_src
+
+After running the tool:
+
+#+begin_src java
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.junit.jupiter.api.Test;
+
+class ParserTest {
+    @Test
+    void rejectsInvalidInput() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            parser.parse(null);
+        });
+    }
+}
+#+end_src
+
+* Supported Translations
+
+** Imports
+
+*** Replacement
+
+Non-static imports:
+
+| JUnit4 import                         | JUnit5 import                               |
+|---------------------------------------+---------------------------------------------|
+| ~org.junit.Assert~                    | =org.junit.jupiter.api.Assertions=          |
+| ~org.junit.Before~                    | =org.junit.jupiter.api.BeforeEach=          |
+| ~org.junit.BeforeClass~               | =org.junit.jupiter.api.BeforeAll=           |
+| ~org.junit.After~                     | =org.junit.jupiter.api.AfterEach=           |
+| ~org.junit.AfterClass~                | =org.junit.jupiter.api.AfterAll=            |
+| ~org.junit.Ignore~                    | =org.junit.jupiter.api.Disabled=            |
+
+Static imports:
+
+| JUnit4 import                         | JUnit5 import                               |
+|---------------------------------------+---------------------------------------------|
+| ~org.junit.Assert.*~                  | =org.junit.jupiter.api.Assertions.*=        |
+| ~org.junit.Assert.assertArrayEquals~  | =org.junit.jupiter.api.Assertions.assertArrayEquals= |
+| ~org.junit.Assert.assertEquals~       | =org.junit.jupiter.api.Assertions.assertEquals= |
+| ~org.junit.Assert.assertNotEquals~    | =org.junit.jupiter.api.Assertions.assertNotEquals= |
+| ~org.junit.Assert.assertSame~         | =org.junit.jupiter.api.Assertions.assertSame= |
+| ~org.junit.Assert.assertNull~         | =org.junit.jupiter.api.Assertions.assertNull= |
+| ~org.junit.Assert.assertNotNull~      | =org.junit.jupiter.api.Assertions.assertNotNull= |
+| ~org.junit.Assert.assertTrue~         | =org.junit.jupiter.api.Assertions.assertTrue= |
+| ~org.junit.Assert.assertFalse~        | =org.junit.jupiter.api.Assertions.assertFalse= |
+| ~org.junit.Assert.assertThrows~       | =org.junit.jupiter.api.Assertions.assertThrows= |
+| ~org.junit.Assert.fail~               | =org.junit.jupiter.api.Assertions.fail=     |
+| ~org.junit.Assume.assumeTrue~         | =org.junit.jupiter.api.Assumptions.assumeTrue= |
+
+*** Removal
+
+The translator removes imports that no longer apply after migration:
 
 - ~org.junit.runner.RunWith~
 - ~org.junit.Rule~
@@ -47,97 +170,113 @@ JUnit4to5 translation powered by ANTLR.
 - ~org.junit.Test~
 - ~org.junit.rules.TestName~
 
-** Rewriting Import Declarations
+*** Rewriting Import Declarations
 
-Once the imports to be removed and to be added are identified, then an algorithm to detect import groups is applied to maintain a coherence in the replacement.
+Once the imports to remove and add are identified, the translator detects import groups so replacements remain coherent with the existing import layout.
 
-* Rules
-** Setup
+** Rules
 
-Rules responsible for setup data before test execution, now need to be called explicitly in the before each hook, in case it's absent the hook is created with the setupRule call.
+*** Setup
 
-/* I took care to add the call only if the call doesn't exists in the code./
+Rules responsible for setup data before test execution must be called explicitly in the JUnit5 before-each hook. If the hook is absent, the translator creates it with the =setupRule= call.
 
-** TestName
+The setup call is only added when the call does not already exist in the code.
 
-This was not an easy one, it involves replacing the instance variable usages by the =TestInfo= argument provided in JUnit5 methods.
+*** TestName
 
-*** Rule Instance Variable
+Migrating =TestName= is more involved because usages of the instance variable need to be replaced by the =TestInfo= argument provided in JUnit5 methods.
 
-First, remove the rule instance variable.
+**** Rule Instance Variable
 
-*** Replacement by TestInfo
+The rule instance variable is removed.
 
-Next, replace the old rule by the =TestInfo= argument from JUnit5.
-  
-*** Nested Methods
+**** Replacement By TestInfo
 
-This should work even when this usage comes from nested methods.
+Usages of the old rule are replaced by the =TestInfo= argument from JUnit5.
 
-/* The nested level can be bigger than one, and it can happens to be in the parent class./
+**** Nested Methods
 
-*** Nested Classes
+The replacement works when usage comes from nested methods.
 
-There are also some cases where the rule is used in nested classes.
+The nested level can be greater than one, and the usage can also come from a parent class.
 
-* Annotations
-** Test Runners
+**** Nested Classes
 
-*Replacement:*
-- ~@RunWith(SpringJUnit4ClassRunner.class)~ -> =@ExtendWith(SpringExtension.class)=
-- ~@RunWith(MockitoJUnitRunner.class)~ -> =@ExtendWith(MockitoExtension.class)=
-  
-*Removal:*
+The translator also handles cases where the rule is used in nested classes.
+
+** Annotations
+
+*** Test Runners
+
+Replacement:
+
+| JUnit4 annotation                              | JUnit5 annotation                  |
+|------------------------------------------------+------------------------------------|
+| ~@RunWith(SpringJUnit4ClassRunner.class)~      | =@ExtendWith(SpringExtension.class)= |
+| ~@RunWith(MockitoJUnitRunner.class)~           | =@ExtendWith(MockitoExtension.class)= |
+
+Removal:
+
 - ~@RunWith(DataProviderRunner.class)~
 - ~@RunWith(Parameterized.class)~
-  
-** JUnit Hooks
 
-- ~@Before~ -> =@BeforeEach=
-- ~@BeforeClass~ -> =@BeforeAll=
-- ~@After~ -> =@AfterEach=
-- ~@AfterClass~ -> =@AfterAll=
-  
-** Ignore
+*** JUnit Hooks
 
-- ~@Ignore~ -> =@Disabled=
-  
-** @Test(expected = ...)
+| JUnit4 annotation | JUnit5 annotation |
+|-------------------+-------------------|
+| ~@Before~         | =@BeforeEach=     |
+| ~@BeforeClass~    | =@BeforeAll=      |
+| ~@After~          | =@AfterEach=      |
+| ~@AfterClass~     | =@AfterAll=       |
 
-In this case the =expected= argument needs to be removed, and the same exception from the argument needs to be used with an =assertThrows= call inside the method.
+*** Ignore
+
+| JUnit4 annotation | JUnit5 annotation |
+|-------------------+-------------------|
+| ~@Ignore~         | =@Disabled=       |
+
+*** =@Test(expected = ...)=
+
+The =expected= argument is removed from =@Test=. The same exception type is then used inside the method with an =assertThrows= call.
 
 ** Parameterized Tests
+
 *** Method Source
 
-This is very simple, it's a matter of removing the =@DataProvider= annotation.
+For method sources, the =@DataProvider= annotation is removed.
 
-And in the test itself, it's just a matter of replacing the annotations for the test and for the input source.
+In the test itself, the translator replaces the annotations for the test and the input source.
 
-However, there are some cases a bit more involved, when the =location= argument is provided, in which case the fully qualified name needs to be built.
+Some cases are more involved. When the =location= argument is provided, the fully qualified name needs to be built.
 
 *** Value Source
 
-It's just a matter of replacing the annotations.
+For value sources, the annotations are replaced.
 
-For =booleans= and =ints=, it's needed to remove the quotes as JUnit5 expects the primitive values accordingly with the type.
+For =booleans= and =ints=, quotes are removed because JUnit5 expects primitive values according to the type.
 
 *** Enum Source
 
-When the input parameter is of an =enum= type, then the =@EnumSource= annotation is used.
+When the input parameter is an =enum= type, the =@EnumSource= annotation is used.
 
-* Breaking Changes
-** description argument position
+** Breaking Changes
+
+*** Description Argument Position
 
 Methods like =assumeTrue= and =assertEquals= have the description argument position changed.
 
-** TestCase base class
+*** TestCase Base Class
 
-There is not a direct replacement for this class. It was needed to remove the =extends= clause and detect any usages of the methods inherited and then to apply the appropriate changes. An example of this is the =assertEquals=, the =TestCase= class brings it, so when it's used it's needed to add the import =org.junit.jupiter.api.Assertions.assertEquals=.
+There is not a direct replacement for this class. The translator removes the =extends= clause, detects usages of inherited methods, and applies the appropriate changes.
 
-* Public Modifier
+For example, =TestCase= provides =assertEquals=. When a test uses that inherited method, the translator adds the import =org.junit.jupiter.api.Assertions.assertEquals=.
 
-The JUnit5 convention is not use the =public= access modifier for the test class, hooks and test methods. However, not always this can be removed, because the tests can have cross-references between them. Metadata is used to detect if that is the case to avoid breaking the code.
+** Public Modifier
 
-* Formatting
+JUnit5 convention is to avoid the =public= access modifier for test classes, hooks, and test methods.
 
-Finally, the program applies some formatting to avoid any translation generates lines longer than *120* characters.
+The modifier cannot always be removed because tests can have cross-references between them. Metadata is used to detect those cases and avoid breaking the code.
+
+** Formatting
+
+Finally, the program applies formatting to avoid translations that generate lines longer than *120* characters.
